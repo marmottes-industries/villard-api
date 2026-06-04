@@ -9,3 +9,6 @@
 
 controllers:
     resource: routing.controllers
+auth:
+    path: /api/login
+    methods: POST
