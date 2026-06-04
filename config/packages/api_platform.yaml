@@ -5,6 +5,11 @@ api_platform:
         stateless: true
         cache_headers:
             vary: ['Content-Type', 'Authorization', 'Origin']
+    formats:
+        jsonld: ['application/ld+json']
+        json: ['application/json']
+    patch_formats:
+        json: ['application/merge-patch+json']
     swagger:
         api_keys:
             JWT:

@@ -3,11 +3,26 @@
 namespace App\Entity;
 
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Delete;
+use ApiPlatform\Metadata\Get;
+use ApiPlatform\Metadata\GetCollection;
+use ApiPlatform\Metadata\Patch;
+use ApiPlatform\Metadata\Post;
+use ApiPlatform\Metadata\Put;
 use App\Repository\OccupationRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
-#[ApiResource]
+#[ApiResource(
+    operations: [
+        new GetCollection(security: "is_granted('ROLE_USER')"),
+        new Get(security: "is_granted('ROLE_USER')"),
+        new Post(securityPostDenormalize: "is_granted('ROLE_ADMIN') or object.getOccupant() == user"),
+        new Put(security: "is_granted('ROLE_ADMIN') or object.getOccupant() == user"),
+        new Patch(security: "is_granted('ROLE_ADMIN') or object.getOccupant() == user"),
+        new Delete(security: "is_granted('ROLE_ADMIN') or object.getOccupant() == user"),
+    ]
+)]
 #[ORM\Entity(repositoryClass: OccupationRepository::class)]
 class Occupation
 {

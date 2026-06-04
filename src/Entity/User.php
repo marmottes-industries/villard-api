@@ -4,15 +4,34 @@ namespace App\Entity;
 
 use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Delete;
+use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
+use ApiPlatform\Metadata\Patch;
+use ApiPlatform\Metadata\Post;
+use ApiPlatform\Metadata\Put;
 use App\Repository\UserRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Serializer\Attribute\Groups;
+use Symfony\Component\Uid\Uuid;
 
-#[ApiResource]
+#[ApiResource(
+    operations: [
+        new GetCollection(security: "is_granted('ROLE_USER')"),
+        new Get(security: "is_granted('ROLE_USER')"),
+        new Post(security: "is_granted('ROLE_ADMIN')"),
+        new Put(security: "is_granted('ROLE_ADMIN') or object == user"),
+        new Patch(security: "is_granted('ROLE_ADMIN') or object == user"),
+        new Delete(security: "is_granted('ROLE_ADMIN')"),
+    ],
+    normalizationContext: ['groups' => ['user:read']],
+    denormalizationContext: ['groups' => ['user:write']]
+)]
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\UniqueConstraint(name: 'UNIQ_IDENTIFIER_USERNAME', fields: ['username'])]
 class User implements UserInterface, PasswordAuthenticatedUserInterface
@@ -23,12 +42,17 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ApiProperty(identifier: true)]
     private ?int $id = null;
 
+    #[ORM\Column(type: UuidType::NAME, unique: true)]
+    private Uuid $uuid;
+
     #[ORM\Column(length: 180)]
+    #[Groups(['user:read', 'user:write'])]
     private ?string $username = null;
 
     /**
      * @var list<string> The user roles
      */
+    #[Groups(['user:read'])]
     #[ORM\Column]
     private array $roles = [];
 
@@ -52,6 +76,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function __construct()
     {
+        $this->uuid = Uuid::v4();
         $this->occupations = new ArrayCollection();
         $this->notes = new ArrayCollection();
     }
@@ -59,6 +84,11 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function getUuid(): string
+    {
+        return (string) $this->uuid;
     }
 
     public function getUsername(): ?string
@@ -74,13 +104,14 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     }
 
     /**
-     * A visual identifier that represents this user.
+     * Used by Symfony security as the user's unique identifier. Returns the immutable UUID
+     * so renaming the username does not invalidate existing JWTs.
      *
      * @see UserInterface
      */
     public function getUserIdentifier(): string
     {
-        return (string) $this->username;
+        return (string) $this->uuid;
     }
 
     /**
@@ -118,17 +149,6 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         $this->password = $password;
 
         return $this;
-    }
-
-    /**
-     * Ensure the session doesn't contain actual password hashes by CRC32C-hashing them, as supported since Symfony 7.3.
-     */
-    public function __serialize(): array
-    {
-        $data = (array) $this;
-        $data["\0".self::class."\0password"] = hash('crc32c', $this->password);
-
-        return $data;
     }
 
     /**
