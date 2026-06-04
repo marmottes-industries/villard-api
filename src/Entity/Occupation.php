@@ -25,7 +25,7 @@ class Occupation
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $notes = null;
 
-    #[ORM\ManyToOne(cascade: ['persist'], inversedBy: 'occupations')]
+    #[ORM\ManyToOne(inversedBy: 'occupations')]
     #[ORM\JoinColumn(nullable: false)]
     private ?User $occupant = null;
 

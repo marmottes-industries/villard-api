@@ -4,6 +4,7 @@ namespace App\Entity;
 
 use ApiPlatform\Metadata\ApiResource;
 use App\Repository\NoteRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ApiResource]
@@ -18,8 +19,8 @@ class Note
     #[ORM\Column(length: 255)]
     private ?string $title = null;
 
-    #[ORM\Column]
-    private ?int $content = null;
+    #[ORM\Column(type: Types::TEXT)]
+    private ?string $content = null;
 
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
@@ -45,12 +46,12 @@ class Note
         return $this;
     }
 
-    public function getContent(): ?int
+    public function getContent(): ?string
     {
         return $this->content;
     }
 
-    public function setContent(int $content): static
+    public function setContent(string $content): static
     {
         $this->content = $content;
 
