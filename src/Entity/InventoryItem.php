@@ -1,0 +1,68 @@
+<?php
+
+namespace App\Entity;
+
+use ApiPlatform\Metadata\ApiResource;
+use App\Repository\InventoryItemRepository;
+use Doctrine\ORM\Mapping as ORM;
+
+#[ApiResource]
+#[ORM\Entity(repositoryClass: InventoryItemRepository::class)]
+class InventoryItem
+{
+    #[ORM\Id]
+    #[ORM\GeneratedValue]
+    #[ORM\Column]
+    private ?int $id = null;
+
+    #[ORM\Column(length: 255)]
+    private ?string $name = null;
+
+    #[ORM\Column(options: ['default' => 1])]
+    private ?int $quantity = null;
+
+    #[ORM\ManyToOne(inversedBy: 'inventoryItems')]
+    #[ORM\JoinColumn(nullable: false)]
+    private ?Category $category = null;
+
+    public function getId(): ?int
+    {
+        return $this->id;
+    }
+
+    public function getName(): ?string
+    {
+        return $this->name;
+    }
+
+    public function setName(string $name): static
+    {
+        $this->name = $name;
+
+        return $this;
+    }
+
+    public function getQuantity(): ?int
+    {
+        return $this->quantity;
+    }
+
+    public function setQuantity(int $quantity): static
+    {
+        $this->quantity = $quantity;
+
+        return $this;
+    }
+
+    public function getCategory(): ?Category
+    {
+        return $this->category;
+    }
+
+    public function setCategory(?Category $category): static
+    {
+        $this->category = $category;
+
+        return $this;
+    }
+}
