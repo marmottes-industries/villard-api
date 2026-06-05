@@ -26,8 +26,8 @@ use Symfony\Component\Uid\Uuid;
         new Get(
             uriTemplate: '/me',
             security: "is_granted('ROLE_USER')",
-            provider: MeProvider::class,
             name: 'me',
+            provider: MeProvider::class,
         ),
         new GetCollection(security: "is_granted('ROLE_USER')"),
         new Get(security: "is_granted('ROLE_USER')"),
@@ -50,6 +50,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     private ?int $id = null;
 
     #[ORM\Column(type: UuidType::NAME, unique: true)]
+    #[Groups(['user:read'])]
     private Uuid $uuid;
 
     #[ORM\Column(length: 180)]
