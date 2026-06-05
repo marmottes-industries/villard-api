@@ -9,6 +9,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Enum\State;
 use App\Repository\InventoryItemRepository;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -39,6 +40,15 @@ class InventoryItem
     #[ORM\ManyToOne(inversedBy: 'inventoryItems')]
     #[ORM\JoinColumn(nullable: false)]
     private ?Category $category = null;
+
+    #[ORM\Column(enumType: State::class, options: ['default' => STATE::OK])]
+    private State $state = State::OK;
+
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $note = null;
+
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $location = null;
 
     public function getId(): ?int
     {
@@ -77,6 +87,42 @@ class InventoryItem
     public function setCategory(?Category $category): static
     {
         $this->category = $category;
+
+        return $this;
+    }
+
+    public function getState(): State
+    {
+        return $this->state;
+    }
+
+    public function setState(State $state): static
+    {
+        $this->state = $state;
+
+        return $this;
+    }
+
+    public function getNote(): ?string
+    {
+        return $this->note;
+    }
+
+    public function setNote(?string $note): static
+    {
+        $this->note = $note;
+
+        return $this;
+    }
+
+    public function getLocation(): ?string
+    {
+        return $this->location;
+    }
+
+    public function setLocation(?string $location): static
+    {
+        $this->location = $location;
 
         return $this;
     }

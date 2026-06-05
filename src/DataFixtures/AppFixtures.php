@@ -8,6 +8,7 @@ use App\Entity\Note;
 use App\Entity\Occupation;
 use App\Entity\ShoppingItem;
 use App\Entity\User;
+use App\Enum\State;
 use Doctrine\Bundle\FixturesBundle\Fixture;
 use Doctrine\Persistence\ObjectManager;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -96,6 +97,7 @@ class AppFixtures extends Fixture
                 $item->setName($name);
                 $item->setQuantity($quantity);
                 $item->setCategory($categories[$categoryName]);
+                $item->setState(State::OK);
                 $manager->persist($item);
             }
         }
