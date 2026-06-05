@@ -24,13 +24,16 @@ use Symfony\Component\Uid\Uuid;
 #[ApiResource(
     operations: [
         new Get(
+            uriTemplate: '/users/{id}',
+            security: "is_granted('ROLE_USER')"
+        ),
+        new Get(
             uriTemplate: '/me',
             security: "is_granted('ROLE_USER')",
             name: 'me',
             provider: MeProvider::class,
         ),
         new GetCollection(security: "is_granted('ROLE_USER')"),
-        new Get(security: "is_granted('ROLE_USER')"),
         new Post(security: "is_granted('ROLE_ADMIN')"),
         new Put(security: "is_granted('ROLE_ADMIN') or object == user"),
         new Patch(security: "is_granted('ROLE_ADMIN') or object == user"),
