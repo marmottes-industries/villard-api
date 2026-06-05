@@ -18,8 +18,8 @@ use Doctrine\ORM\Mapping as ORM;
         new GetCollection(security: "is_granted('ROLE_USER')"),
         new Get(security: "is_granted('ROLE_USER')"),
         new Post(securityPostDenormalize: "is_granted('ROLE_ADMIN') or object.getAuthor() == user"),
-        new Put(security: "is_granted('ROLE_ADMIN') or object.getAuthor() == user"),
-        new Patch(security: "is_granted('ROLE_ADMIN') or object.getAuthor() == user"),
+        new Put(securityPostDenormalize: "is_granted('ROLE_ADMIN') or (object.getAuthor() == user and previous_object.getAuthor() == user)"),
+        new Patch(securityPostDenormalize: "is_granted('ROLE_ADMIN') or (object.getAuthor() == user and previous_object.getAuthor() == user)"),
         new Delete(security: "is_granted('ROLE_ADMIN') or object.getAuthor() == user"),
     ]
 )]
