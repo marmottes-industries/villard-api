@@ -14,18 +14,14 @@ final class Version20260605145627 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return '';
+        return 'No-op: superseded by Version20260605144752 which already added state/note/location.';
     }
 
     public function up(Schema $schema): void
     {
-        // this up() migration is auto-generated, please modify it to your needs
-        $this->addSql('ALTER TABLE inventory_item ADD note VARCHAR(255) DEFAULT NULL, ADD location VARCHAR(255) DEFAULT NULL, CHANGE state state VARCHAR(255) DEFAULT \'ok\' NOT NULL');
     }
 
     public function down(Schema $schema): void
     {
-        // this down() migration is auto-generated, please modify it to your needs
-        $this->addSql('ALTER TABLE inventory_item DROP note, DROP location, CHANGE state state VARCHAR(255) NOT NULL');
     }
 }
