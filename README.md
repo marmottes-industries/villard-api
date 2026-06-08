@@ -2,7 +2,7 @@
 
 Application personnelle et auto-hébergée de gestion d'un appartement familial : planning d'occupation (qui occupe le logement et quand) et suivi d'inventaire (linge, vaisselle, équipement, courses récurrentes, état des lieux).
 
-Ce dépôt contient **uniquement le backend API**. La SPA Vue 3 vit dans un dépôt séparé (`appart-front`) ; un client mobile pourra être ajouté ultérieurement sans modification serveur.
+Ce dépôt contient **uniquement le backend API**. La SPA Vue 3 vit dans un dépôt séparé (`villard-front`) ; un client mobile pourra être ajouté ultérieurement sans modification serveur.
 
 Projet à double objectif : usage réel et auto-hébergement (ownership des données, sortie progressive des services GAFAM), tout en servant de pièce de portfolio démontrant une architecture découplée moderne.
 
@@ -97,7 +97,7 @@ Toute la documentation technique vit dans [`docs/`](docs/) :
 
 Autres documents racine :
 
-- [`API.md`](API.md) — référence API destinée à l'agent du dépôt front (`appart-front`).
+- [`API.md`](API.md) — référence API destinée à l'agent du dépôt front (`villard-front`).
 - [`ROADMAP.md`](ROADMAP.md) — feuille de route projet (backend + front + déploiement).
 - [`CLAUDE.md`](CLAUDE.md) — instructions pour l'agent Claude Code travaillant sur ce dépôt.
 

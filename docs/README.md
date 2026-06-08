@@ -16,7 +16,7 @@ Documentation technique du backend `villard-api` (Symfony 8.1 + API Platform 4.x
 ## Documents complémentaires (racine du dépôt)
 
 - [`README.md`](../README.md) — pitch projet, point d'entrée.
-- [`API.md`](../API.md) — référence API destinée à l'agent du dépôt front (`appart-front`). Copie de travail à synchroniser quand l'API évolue.
+- [`API.md`](../API.md) — référence API destinée à l'agent du dépôt front (`villard-front`). Copie de travail à synchroniser quand l'API évolue.
 - [`ROADMAP.md`](../ROADMAP.md) — feuille de route projet (backend + front + déploiement).
 - [`CLAUDE.md`](../CLAUDE.md) — instructions pour l'agent Claude Code sur ce dépôt.
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project context
 
-"Les Marmottes" — self-hosted family apartment management app (occupancy calendar + inventory tracking). This repo is the **backend API only**; the Vue 3 SPA lives in a separate repo (`appart-front`). The API is designed to be consumed by multiple clients (web + future mobile) with no breaking changes required server-side.
+"Les Marmottes" — self-hosted family apartment management app (occupancy calendar + inventory tracking). This repo is the **backend API only**; the Vue 3 SPA lives in a separate repo (`villard-front`). The API is designed to be consumed by multiple clients (web + future mobile) with no breaking changes required server-side.
 
 Extensive human documentation already exists in `docs/` (architecture, authentication, resources, configuration, development, getting-started) and `API.md` (reference written for the front-end agent). Read those before duplicating explanations.
 
