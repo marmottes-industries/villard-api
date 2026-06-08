@@ -2,6 +2,9 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
+use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
+use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
@@ -24,6 +27,8 @@ use Doctrine\ORM\Mapping as ORM;
         new Delete(security: "is_granted('ROLE_USER')"),
     ]
 )]
+#[ApiFilter(SearchFilter::class, properties: ['name' => 'ipartial'])]
+#[ApiFilter(OrderFilter::class, properties: ['name'], arguments: ['orderParameterName' => 'order'])]
 #[ORM\Entity(repositoryClass: CategoryRepository::class)]
 class Category
 {

@@ -2,6 +2,10 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Doctrine\Orm\Filter\BooleanFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
+use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
+use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
@@ -22,6 +26,12 @@ use Doctrine\ORM\Mapping as ORM;
         new Delete(security: "is_granted('ROLE_ADMIN')"),
     ]
 )]
+#[ApiFilter(SearchFilter::class, properties: [
+    'name' => 'ipartial',
+    'category' => 'exact',
+])]
+#[ApiFilter(BooleanFilter::class, properties: ['purchased'])]
+#[ApiFilter(OrderFilter::class, properties: ['name', 'purchased'], arguments: ['orderParameterName' => 'order'])]
 #[ORM\Entity(repositoryClass: ShoppingItemRepository::class)]
 class ShoppingItem
 {
