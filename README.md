@@ -17,6 +17,7 @@ Projet à double objectif : usage réel et auto-hébergement (ownership des donn
 - **Doctrine ORM 3** — mapping attribut sur `src/Entity/`
 - **MariaDB** (dev, via Docker Compose)
 - **LexikJWTAuthenticationBundle 3** — authentification JWT signée RSA
+- **gesdinet/jwt-refresh-token-bundle** — refresh tokens avec rotation (`single_use`) et fenêtre glissante
 - **nelmio/cors-bundle** — CORS configurable par environnement
 - **DoctrineFixturesBundle** (dev/test) — données fictives prêtes à l'emploi
 
@@ -128,7 +129,6 @@ php bin/console cache:clear
 - **Client mobile** — choix techno à arbitrer (Hotwire Native, React Native, Flutter, PWA). La même API sera consommée sans changement.
 - **Notifications** — rappels (arrivée prochaine, courses) via Symfony Messenger + workers.
 - **Multi-logements** — généralisation du modèle si d'autres biens s'ajoutent.
-- **Refresh token JWT** — actuellement absent ; le client refait un `POST /api/login` à expiration.
 - **Groupes de sérialisation** sur l'ensemble des entités (seul `User` les a aujourd'hui).
 
 ---

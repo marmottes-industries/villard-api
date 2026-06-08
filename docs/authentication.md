@@ -1,12 +1,10 @@
 # Authentification
 
-L'API est entièrement **stateless**. L'authentification repose sur **LexikJWTAuthenticationBundle 3** : login par username/password, retour d'un JWT signé RSA, ensuite passé en `Authorization: Bearer` sur toutes les requêtes.
-
-> **Note** : le `CLAUDE.md` à la racine indique « JWT planifié, pas encore installé » — c'est obsolète. LexikJWT est bel et bien installé (`composer.json`) et le firewall l'utilise (`config/packages/security.yaml`).
+L'API est entièrement **stateless**. L'authentification repose sur **LexikJWTAuthenticationBundle 3** (JWT signé RSA) couplé à **gesdinet/jwt-refresh-token-bundle** (refresh tokens avec rotation). Login par username/password → couple `token` + `refresh_token`. Le `token` est ensuite passé en `Authorization: Bearer` sur toutes les requêtes. Quand il expire (1 h), le client échange son `refresh_token` contre un nouveau couple via `POST /api/token/refresh`.
 
 ## Firewall Symfony
 
-`config/packages/security.yaml` définit deux firewalls :
+`config/packages/security.yaml` définit trois firewalls :
 
 ```yaml
 firewalls:
@@ -18,6 +16,12 @@ firewalls:
             check_path: /api/login
             success_handler: lexik_jwt_authentication.handler.authentication_success
             failure_handler: lexik_jwt_authentication.handler.authentication_failure
+    token_refresh:
+        pattern: ^/api/token/refresh
+        stateless: true
+        provider: app_jwt_provider           # cherche le user par UUID
+        refresh_jwt:
+            check_path: /api/token/refresh
     api:
         pattern: ^/api
         stateless: true
@@ -33,10 +37,13 @@ Deux user providers Doctrine :
 `access_control` :
 
 ```yaml
-- { path: ^/api/login, roles: PUBLIC_ACCESS }
-- { path: ^/api/docs,  roles: PUBLIC_ACCESS }
-- { path: ^/api,       roles: IS_AUTHENTICATED_FULLY }
+- { path: ^/api/login,          roles: PUBLIC_ACCESS }
+- { path: ^/api/token/refresh,  roles: PUBLIC_ACCESS }
+- { path: ^/api/docs,           roles: PUBLIC_ACCESS }
+- { path: ^/api,                roles: IS_AUTHENTICATED_FULLY }
 ```
+
+`/api/token/refresh` est public au sens du firewall (pas de JWT requis pour l'appeler) ; la sécurité repose sur la possession d'un refresh token valide non encore consommé.
 
 ## Configuration JWT
 
@@ -94,7 +101,10 @@ Content-Type: application/json
 Réponse 200 :
 
 ```json
-{ "token": "eyJ0eXAiOiJKV1Qi..." }
+{
+    "token": "eyJ0eXAiOiJKV1Qi...",
+    "refresh_token": "7e1f741b392bcd1cf078276fa68327f0..."
+}
 ```
 
 Réponse 401 si identifiants invalides.
@@ -107,9 +117,70 @@ Authorization: Bearer eyJ0eXAiOi...
 Accept: application/json
 ```
 
-### Expiration
+### Expiration & refresh
 
-`JWT_TOKEN_TTL=3600` → 1 heure. Au-delà, l'API répond `401`. Pas de refresh token pour l'instant : le client doit refaire un `POST /api/login`.
+`JWT_TOKEN_TTL=3600` → 1 heure. Au-delà, l'API répond `401`. Le client échange alors son `refresh_token` contre un nouveau couple :
+
+```http
+POST /api/token/refresh
+Content-Type: application/json
+
+{ "refresh_token": "7e1f741b392bcd1cf078276fa68327f0..." }
+```
+
+Réponse 200 — **nouveau** couple :
+
+```json
+{
+    "token": "eyJ0eXAiOiJKV1Qi...",
+    "refresh_token": "9273a5b26cea54234b63e4c37128fc2c..."
+}
+```
+
+Réponse 401 si le refresh est inconnu, expiré, ou déjà consommé.
+
+## Refresh tokens
+
+Géré par `gesdinet/jwt-refresh-token-bundle`. Configuration : `config/packages/gesdinet_jwt_refresh_token.yaml`.
+
+```yaml
+gesdinet_jwt_refresh_token:
+    refresh_token_class: App\Entity\RefreshToken
+    ttl: 2592000           # 30 jours
+    ttl_update: true       # à chaque refresh, le nouveau token repart pour 30 jours
+    single_use: true       # rotation : un refresh token ne sert qu'une fois
+    token_parameter_name: refresh_token
+```
+
+### Rotation (`single_use: true`)
+
+Chaque appel à `/api/token/refresh` :
+1. Valide le refresh token reçu (existe, pas expiré, non révoqué).
+2. Émet un nouveau JWT **et** un nouveau refresh token.
+3. Supprime / invalide l'ancien.
+
+Conséquence : un refresh token volé devient inutilisable dès que la victime l'a utilisé une fois. À l'inverse, si l'attaquant frappe le premier, le prochain refresh du légitime échouera en 401 — signal côté front qu'on peut traiter comme une compromission (forcer un re-login complet).
+
+### Fenêtre glissante (`ttl_update: true`)
+
+Le nouveau refresh token émis lors d'un refresh repart pour 30 jours. Un utilisateur actif ne se reconnecte jamais ; un utilisateur inactif > 30 jours doit refaire un `POST /api/login`.
+
+### Stockage
+
+Table `refresh_tokens` (entité `App\Entity\RefreshToken` qui étend `Gesdinet\JWTRefreshTokenBundle\Entity\RefreshToken`).
+
+- `refresh_token` (string, unique) — la valeur en clair (pas hashée par défaut côté bundle).
+- `username` (string) — **contient l'UUID de l'utilisateur**, pas le username. Nom de colonne legacy du bundle ; cohérent avec le `app_jwt_provider` qui résout les users par UUID.
+- `valid` (datetime) — date d'expiration.
+
+### Nettoyage
+
+Les refresh tokens expirés ne sont pas purgés automatiquement. À exécuter périodiquement (cron quotidien en prod) :
+
+```bash
+php bin/console gesdinet:jwt:clear     # purge tous les refresh expirés
+php bin/console gesdinet:jwt:revoke <token>   # révoque un token précis
+```
 
 ## L'endpoint `/api/me`
 

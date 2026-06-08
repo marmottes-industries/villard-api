@@ -14,6 +14,7 @@ Extensive human documentation already exists in `docs/` (architecture, authentic
 - **Doctrine ORM 3** with attribute-based mapping (`src/Entity/`)
 - **MariaDB** (dev, via Docker Compose)
 - **LexikJWTAuthenticationBundle 3** — JWT signed with RSA keys
+- **gesdinet/jwt-refresh-token-bundle** — refresh tokens with rotation
 - `nelmio/cors-bundle` for cross-origin support
 - `doctrine/doctrine-fixtures-bundle` (dev/test)
 
@@ -48,12 +49,21 @@ No test suite is wired yet (no `phpunit` in composer.json, no `tests/` directory
 
 `config/packages/api_platform.yaml` sets `defaults.stateless: true` with `Vary: Content-Type, Authorization, Origin` so HTTP caches can differentiate per user and per client. No server sessions — every request carries its JWT.
 
-### Two firewalls (`config/packages/security.yaml`)
+### Three firewalls (`config/packages/security.yaml`)
 
-- `login` (`^/api/login`) — `json_login` against `app_user_provider` (looks up `User.username`), returns JWT on success.
+- `login` (`^/api/login`) — `json_login` against `app_user_provider` (looks up `User.username`), returns JWT + refresh token on success.
+- `token_refresh` (`^/api/token/refresh`) — `refresh_jwt` authenticator (gesdinet bundle) against `app_jwt_provider`. Validates the refresh token, returns a new JWT + new refresh token.
 - `api` (`^/api`) — stateless JWT auth. Critically, it uses **a different provider** (`app_jwt_provider`) that loads users by **UUID**, matching the `user_id_claim: uuid` in `lexik_jwt_authentication.yaml`. This means a username change does NOT invalidate tokens in flight. Don't switch the JWT identifier back to `username` without understanding this.
 
-`/api/login` and `/api/docs` are `PUBLIC_ACCESS`; everything else under `/api` requires `IS_AUTHENTICATED_FULLY`.
+`/api/login`, `/api/token/refresh` and `/api/docs` are `PUBLIC_ACCESS`; everything else under `/api` requires `IS_AUTHENTICATED_FULLY`.
+
+### Refresh tokens (`gesdinet/jwt-refresh-token-bundle`)
+
+- Access token TTL: 1h (`JWT_TOKEN_TTL`). Refresh token TTL: 30 days (`gesdinet_jwt_refresh_token.yaml`).
+- **Rotation enabled** (`single_use: true`): every refresh consumes the token and emits a new one. Reusing a consumed refresh returns 401 — that's the theft-detection signal.
+- **Sliding window** (`ttl_update: true`): each use resets the new refresh token's expiry to TTL — an active user never needs to re-login.
+- The refresh entity is `App\Entity\RefreshToken` extending the bundle's base class (`refresh_tokens` table). The `username` column stores the user's UUID (legacy column name in the bundle — matches `app_jwt_provider`'s `property: uuid`).
+- Cleanup of expired tokens is not automatic. Run `php bin/console gesdinet:jwt:clear` periodically (cron in prod).
 
 ### Auto-generated endpoints from `#[ApiResource]`
 
@@ -94,4 +104,3 @@ src/
 - Migrations live in `migrations/`, generated from entity attribute changes via `doctrine:migrations:diff`.
 - Test DB uses suffix `_test` (configured in `doctrine.yaml` `when@test`); password hashing is weakened in `when@test` (security.yaml).
 - CORS origins are driven by `CORS_ALLOW_ORIGIN` (regex) — set per environment in `.env.*.local`.
-- Refresh tokens are **not** implemented; clients re-POST `/api/login` when the JWT expires. (Listed as an evolution in `ROADMAP.md` / `docs/architecture.md`.)

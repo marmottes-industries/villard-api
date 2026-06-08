@@ -3,7 +3,7 @@
 Documentation de l'API backend (`villard-api`) à destination du client front (`villard-front`).
 Ce fichier est conçu pour être copié à la racine du repo front et lu directement par l'agent Claude du projet front.
 
-> **Stack backend**: Symfony 8.1 + API Platform 4.x + Doctrine + MariaDB + LexikJWT.
+> **Stack backend**: Symfony 8.1 + API Platform 4.x + Doctrine + MariaDB + LexikJWT + gesdinet/jwt-refresh-token-bundle.
 > **Préfixe global**: toutes les routes API sont sous `/api`.
 
 ---
@@ -22,9 +22,9 @@ Documentation interactive Swagger : `GET /api/docs` (accès public).
 
 ---
 
-## 2. Authentification (JWT)
+## 2. Authentification (JWT + refresh)
 
-L'API est **stateless**. Toutes les routes sous `/api` (sauf `/api/login` et `/api/docs`) exigent un JWT valide.
+L'API est **stateless**. Toutes les routes sous `/api` (sauf `/api/login`, `/api/token/refresh` et `/api/docs`) exigent un JWT valide.
 
 ### 2.1 Login
 
@@ -42,7 +42,8 @@ Content-Type: application/json
 
 ```json
 {
-    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...."
+    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9....",
+    "refresh_token": "7e1f741b392bcd1cf078276fa68327f0..."
 }
 ```
 
@@ -56,12 +57,41 @@ Joindre le token sur **toutes** les requêtes API :
 Authorization: Bearer <token>
 ```
 
-- **TTL** : 3600 s (1 h). Au-delà → `401`. Pas de refresh token côté serveur pour l'instant : refaire un
-  `POST /api/login`.
+- **TTL access token** : 3600 s (1 h). Au-delà → `401` (cf. §2.3 pour le refresh).
 - Le claim d'identité du JWT est `uuid` (UUID immuable de l'utilisateur) → renommer son `username` n'invalide pas un
   token déjà émis.
 
-### 2.3 Rôles
+### 2.3 Refresh token
+
+À expiration du JWT, échanger le `refresh_token` contre un nouveau couple :
+
+```
+POST /api/token/refresh
+Content-Type: application/json
+
+{ "refresh_token": "7e1f741b392bcd1cf078276fa68327f0..." }
+```
+
+**Réponse 200** — nouveau couple :
+
+```json
+{
+    "token": "eyJ0eXAi...",
+    "refresh_token": "9273a5b26cea54234b63e4c37128fc2c..."
+}
+```
+
+**Réponse 401** : refresh inconnu, expiré, ou déjà consommé.
+
+Côté serveur :
+
+- **TTL refresh token** : 30 jours, **glissant** — chaque refresh repart pour 30 jours d'activité.
+- **Rotation activée** (`single_use: true`) : un refresh token ne sert qu'**une seule fois**. Stocker uniquement le dernier `refresh_token` reçu et écraser à chaque refresh.
+- Un utilisateur inactif > 30 jours doit refaire un `POST /api/login`.
+
+> ⚠️ Stratégie front recommandée : intercepteur HTTP qui sur `401` (autre que sur `/api/login`) tente **un seul** appel à `/api/token/refresh`, rejoue la requête initiale avec le nouveau token, et si le refresh lui-même renvoie `401` → déconnexion + redirection vers le login. Verrouiller les refreshs concurrents (mutex/queue) pour éviter qu'une vague de 401 ne fasse appeler `/api/token/refresh` 10× en parallèle : seul le premier réussit, les autres invalideront le nouveau refresh (rotation).
+
+### 2.4 Rôles
 
 - `ROLE_USER` : utilisateur connecté (par défaut pour tout user).
 - `ROLE_ADMIN` : suppressions sensibles + création/suppression d'utilisateurs.
@@ -287,11 +317,23 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 ### 5.2 Login
 
 ```ts
-const {token} = await api<{ token: string }>('/login', {
+const {token, refresh_token} = await api<{ token: string; refresh_token: string }>('/login', {
     method: 'POST',
     body: JSON.stringify({username, password}),
 })
 localStorage.setItem('jwt', token)
+localStorage.setItem('refresh', refresh_token)
+```
+
+### 5.2 bis Refresh
+
+```ts
+const {token, refresh_token} = await api<{ token: string; refresh_token: string }>('/token/refresh', {
+    method: 'POST',
+    body: JSON.stringify({refresh_token: localStorage.getItem('refresh')}),
+})
+localStorage.setItem('jwt', token)
+localStorage.setItem('refresh', refresh_token) // ⚠️ écraser : l'ancien refresh est invalidé
 ```
 
 ### 5.3 Lister les courses
@@ -333,7 +375,7 @@ await api('/occupations', {
 2. **PATCH** → `Content-Type: application/merge-patch+json` sinon `415`.
 3. Préférer `Accept: application/json` pour des payloads plats ; passer en `application/ld+json` uniquement si on a
    besoin de l'hypermedia/pagination Hydra.
-4. Le JWT expire au bout d'1 h : prévoir un intercepteur qui, sur `401`, déconnecte et redirige vers le login.
+4. Le JWT expire au bout d'1 h : intercepteur qui sur `401` tente un refresh (§2.3), rejoue la requête, et déconnecte uniquement si le refresh échoue lui-même.
 5. **Pas de breaking changes côté serveur** : si le front a besoin d'un champ supplémentaire ou d'un endpoint custom,
    ouvrir une issue plutôt que de bidouiller. L'API doit rester consommable par d'autres clients (mobile à venir).
 6. La pluralisation des URLs suit la convention API Platform : `Category → categories`,
@@ -361,7 +403,6 @@ Implémenté via `App\State\MeProvider` (cf. `src/State/MeProvider.php`). Si l'u
 
 À demander au backend si besoin côté front :
 
-- **Refresh token** — pas implémenté. À expiration du JWT (1 h), refaire un `POST /api/login`.
 - **Auto-remplissage de `createdAt`** sur `Note` côté serveur — pour l'instant le front doit envoyer la valeur.
 - **Filtres / recherche** (API Platform `SearchFilter`, `DateFilter`) sur les ressources.
 - **Création de mot de passe via `POST /api/users`** — actuellement le champ `password` n'est pas dans `user:write` (

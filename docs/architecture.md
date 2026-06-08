@@ -101,4 +101,3 @@ L'API est volontairement le seul point de vérité. Conséquences :
 - Groupes de sérialisation sur les ressources autres que `User` (limite l'exposition par défaut).
 - Filtres API Platform (`SearchFilter`, `DateFilter`) sur les ressources pour les listings côté front.
 - Auto-remplissage du `createdAt` des `Note` côté serveur.
-- Endpoint de refresh token (pour l'instant : refaire un `POST /api/login` quand le JWT expire).
