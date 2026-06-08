@@ -99,5 +99,4 @@ L'API est volontairement le seul point de vérité. Conséquences :
 ## Évolutions prévues
 
 - Groupes de sérialisation sur les ressources autres que `User` (limite l'exposition par défaut).
-- Filtres API Platform (`SearchFilter`, `DateFilter`) sur les ressources pour les listings côté front.
-- Auto-remplissage du `createdAt` des `Note` côté serveur.
+- Nettoyage périodique des refresh tokens expirés (`gesdinet:jwt:clear`) — à câbler en cron une fois la mise en ligne effectuée.

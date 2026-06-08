@@ -111,8 +111,10 @@ Liste de courses.
 | `id` | int | — |
 | `title` | string (255) | requis |
 | `content` | text | requis |
-| `createdAt` | datetime (ISO 8601) | requis, **non auto-rempli côté serveur** → à fournir par le client |
+| `createdAt` | datetime (ISO 8601) | **auto-rempli côté serveur à la création**, lecture seule (toute valeur envoyée par le client est ignorée) |
 | `author` | IRI User | **requis** |
+
+> Implémenté via le processor `App\State\NoteProcessor` qui wrappe le `PersistProcessor` Doctrine et pose `createdAt = now()` sur l'opération `POST`. Le champ est marqué `#[ApiProperty(writable: false)]` pour éviter toute écriture client (y compris en PUT/PATCH).
 
 ### Occupation — `/api/occupations`
 
@@ -125,6 +127,55 @@ Calendrier d'occupation de l'appartement.
 | `endDate` | date | requis |
 | `notes` | text | optionnel |
 | `occupant` | IRI User | **requis** |
+
+## Filtres & tri
+
+Les collections (`GET /api/<resource>`) acceptent des paramètres de recherche, de filtrage temporel et de tri via les filtres API Platform. Tous les paramètres sont combinables (AND).
+
+### Stratégies `SearchFilter`
+
+- `exact` : égalité stricte (par défaut sur les relations).
+- `ipartial` : `LIKE %valeur%` insensible à la casse — utilisé sur les champs texte libres.
+- Pour une relation, on accepte soit l'IRI (`?category=/api/categories/1`), soit l'id (`?category=1`).
+
+### `DateFilter`
+
+Pour chaque champ filtrable, suffixes `[before]`, `[strictly_before]`, `[after]`, `[strictly_after]` :
+`?createdAt[after]=2026-01-01&createdAt[strictly_before]=2026-07-01`.
+
+### `OrderFilter`
+
+Paramètre `order` sous forme d'objet : `?order[createdAt]=desc&order[title]=asc`.
+
+### `BooleanFilter`
+
+Booléen accepté en `true` / `false` (ou `1` / `0`) : `?purchased=false`.
+
+### Récapitulatif par ressource
+
+| Ressource | SearchFilter | DateFilter | OrderFilter | Autres |
+|-----------|--------------|------------|-------------|--------|
+| **Category** | `name` (ipartial) | — | `name` | — |
+| **InventoryItem** | `name` (ipartial), `category` (exact), `state` (exact), `note` (ipartial), `location` (ipartial) | — | `name`, `quantity`, `state` | — |
+| **ShoppingItem** | `name` (ipartial), `category` (exact) | — | `name`, `purchased` | `BooleanFilter` sur `purchased` |
+| **Note** | `title` (ipartial), `content` (ipartial), `author` (exact), `author.uuid` (exact) | `createdAt` | `createdAt`, `title` | — |
+| **Occupation** | `occupant` (exact), `occupant.uuid` (exact), `notes` (ipartial) | `startDate`, `endDate` | `startDate`, `endDate` | — |
+
+### Exemples
+
+```http
+# Notes contenant "chauffage", écrites par un user donné, du plus récent au plus ancien
+GET /api/notes?content=chauffage&author=/api/users/3&order[createdAt]=desc
+
+# Occupations chevauchant juillet 2026
+GET /api/occupations?startDate[before]=2026-07-31&endDate[after]=2026-07-01
+
+# Inventaire d'une catégorie, items à remplacer
+GET /api/inventory_items?category=/api/categories/2&state=replace
+
+# Courses restantes triées par nom
+GET /api/shopping_items?purchased=false&order[name]=asc
+```
 
 ## Pagination & format
 

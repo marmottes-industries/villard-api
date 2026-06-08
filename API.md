@@ -264,8 +264,9 @@ Liste de courses. `category` est **optionnelle**.
 }
 ```
 
-> ⚠️ En `POST`, `author` doit pointer sur l'utilisateur courant (sauf admin). `createdAt` n'est pas auto-rempli pour l'
-> instant côté serveur → l'envoyer depuis le front.
+> En `POST`, `author` doit pointer sur l'utilisateur courant (sauf admin). **`createdAt` est auto-rempli côté serveur**
+> (timestamp UTC à l'instant de la création) et lecture seule — toute valeur envoyée par le client est ignorée, y
+> compris en `PUT`/`PATCH`.
 
 ### 4.6 Occupation — `/api/occupations`
 
@@ -399,11 +400,51 @@ Implémenté via `App\State\MeProvider` (cf. `src/State/MeProvider.php`). Si l'u
 
 ---
 
-## 8. Endpoints non encore exposés
+## 8. Filtres, recherche & tri
+
+Toutes les collections (`GET /api/<resource>`) acceptent des paramètres de filtrage et de tri via la query string. Les paramètres se combinent en AND.
+
+### Stratégies courantes
+
+- **SearchFilter `exact`** : égalité stricte. Sur une relation, on accepte l'IRI (`?category=/api/categories/1`) **ou** l'id nu (`?category=1`).
+- **SearchFilter `ipartial`** : `LIKE %valeur%` insensible à la casse, pour les recherches en texte libre.
+- **DateFilter** : suffixes `[before]`, `[strictly_before]`, `[after]`, `[strictly_after]`. Exemple : `?createdAt[after]=2026-01-01`.
+- **BooleanFilter** : `true` / `false` (ou `1` / `0`).
+- **OrderFilter** : `?order[champ]=asc|desc`, plusieurs champs autorisés.
+
+### Récapitulatif par ressource
+
+| Ressource | Search | Date | Order | Booléen |
+|-----------|--------|------|-------|---------|
+| `Category` | `name` (ipartial) | — | `name` | — |
+| `InventoryItem` | `name` (ipartial), `category` (exact), `state` (exact), `note` (ipartial), `location` (ipartial) | — | `name`, `quantity`, `state` | — |
+| `ShoppingItem` | `name` (ipartial), `category` (exact) | — | `name`, `purchased` | `purchased` |
+| `Note` | `title` (ipartial), `content` (ipartial), `author` (exact), `author.uuid` (exact) | `createdAt` | `createdAt`, `title` | — |
+| `Occupation` | `occupant` (exact), `occupant.uuid` (exact), `notes` (ipartial) | `startDate`, `endDate` | `startDate`, `endDate` | — |
+
+### Exemples
+
+```http
+# Notes contenant "chauffage", auteur donné, du plus récent au plus ancien
+GET /api/notes?content=chauffage&author=/api/users/3&order[createdAt]=desc
+
+# Occupations chevauchant juillet 2026
+GET /api/occupations?startDate[before]=2026-07-31&endDate[after]=2026-07-01
+
+# Inventaire d'une catégorie, items à remplacer
+GET /api/inventory_items?category=/api/categories/2&state=replace
+
+# Courses restantes triées par nom
+GET /api/shopping_items?purchased=false&order[name]=asc
+```
+
+Les filtres apparaissent aussi dans `/api/docs` (Swagger UI) pour chaque collection.
+
+---
+
+## 9. Endpoints non encore exposés
 
 À demander au backend si besoin côté front :
 
-- **Auto-remplissage de `createdAt`** sur `Note` côté serveur — pour l'instant le front doit envoyer la valeur.
-- **Filtres / recherche** (API Platform `SearchFilter`, `DateFilter`) sur les ressources.
 - **Création de mot de passe via `POST /api/users`** — actuellement le champ `password` n'est pas dans `user:write` (
   cf. § 4.1).
