@@ -7,7 +7,7 @@ Référence des entités exposées par API Platform. Toutes les routes sont pré
 ## Conventions
 
 - **Pluralisation des URLs** : convention API Platform en snake_case anglais.
-  `Category → /api/categories`, `InventoryItem → /api/inventory_items`, `ShoppingItem → /api/shopping_items`, `Note → /api/notes`, `Occupation → /api/occupations`, `User → /api/users`.
+  `Category → /api/categories`, `InventoryItem → /api/inventory_items`, `ShoppingItem → /api/shopping_items`, `Note → /api/notes`, `Occupation → /api/occupations`, `Work → /api/works`, `User → /api/users`.
 - **Identifiants URL** : `id` numérique auto-incrémenté (sauf l'UUID interne du `User`, utilisé pour le JWT mais pas dans les URLs).
 - **Relations en écriture** : passer l'IRI (`"/api/categories/1"`), pas un id nu ni un objet imbriqué.
 - **PATCH** : `Content-Type: application/merge-patch+json` obligatoire (sinon 415).
@@ -24,8 +24,9 @@ Chaque entité expose : `GET /collection`, `GET /{id}`, `POST /collection`, `PUT
 | **ShoppingItem** (`/api/shopping_items`) | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` | `ROLE_ADMIN` |
 | **Note** (`/api/notes`) | `ROLE_USER` | `ROLE_ADMIN` **ou** auteur = user courant | `ROLE_ADMIN` **ou** auteur (avant **et** après) = user courant | `ROLE_ADMIN` **ou** auteur = user courant |
 | **Occupation** (`/api/occupations`) | `ROLE_USER` | `ROLE_ADMIN` **ou** occupant = user courant | `ROLE_ADMIN` **ou** occupant (avant **et** après) = user courant | `ROLE_ADMIN` **ou** occupant = user courant |
+| **Work** (`/api/works`) | `ROLE_USER` | `ROLE_ADMIN` **ou** auteur = user courant | `ROLE_ADMIN` **ou** auteur (avant **et** après) = user courant | `ROLE_ADMIN` **ou** auteur = user courant |
 
-> Les contrôles « avant et après » sur Note/Occupation utilisent `securityPostDenormalize` : ils empêchent un utilisateur de réassigner un objet à un autre auteur/occupant (vérification simultanée de `object` et `previous_object`).
+> Les contrôles « avant et après » sur Note/Occupation/Work utilisent `securityPostDenormalize` : ils empêchent un utilisateur de réassigner un objet à un autre auteur/occupant (vérification simultanée de `object` et `previous_object`).
 
 ## Endpoints custom
 
@@ -128,6 +129,52 @@ Calendrier d'occupation de l'appartement.
 | `notes` | text | optionnel |
 | `occupant` | IRI User | **requis** |
 
+### Work — `/api/works`
+
+Travaux à réaliser dans l'appartement (bricolage / prestation pro). Suivi de cycle de vie + chiffrage.
+
+| Champ | Type | Contraintes |
+|-------|------|-------------|
+| `id` | int | — |
+| `title` | string (255) | requis |
+| `description` | text | optionnel |
+| `status` | `App\Enum\WorkStatus` | défaut `suggested` |
+| `type` | `App\Enum\WorkType` | optionnel |
+| `priority` | `App\Enum\WorkPriority` | optionnel |
+| `author` | IRI User | **requis** — auto-rempli avec le user courant en `POST` si omis |
+| `createdAt` | datetime (ISO 8601) | **auto-rempli côté serveur à la création**, lecture seule (`#[ApiProperty(writable: false)]`) |
+| `scheduledFor` | date (`YYYY-MM-DD`) | optionnel |
+| `completedAt` | datetime | **auto-rempli côté serveur dès que `status` passe à `done`** si non fourni (toutes opérations) |
+| `estimatedCost` | int | optionnel — en euros |
+| `actualCost` | int | optionnel — en euros |
+
+Enum `WorkStatus` (`src/Enum/WorkStatus.php`) :
+
+| Valeur | Label FR |
+|--------|----------|
+| `suggested` | Suggestion |
+| `planned` | Planifié |
+| `in_progress` | En cours |
+| `done` | Fait |
+| `cancelled` | Abandonné |
+
+Enum `WorkType` (`src/Enum/WorkType.php`) :
+
+| Valeur | Label FR |
+|--------|----------|
+| `diy` | À faire soi-même |
+| `pro` | À faire faire |
+
+Enum `WorkPriority` (`src/Enum/WorkPriority.php`) :
+
+| Valeur | Label FR |
+|--------|----------|
+| `low` | Faible |
+| `medium` | Moyen |
+| `high` | Élevé |
+
+> Implémenté via le processor `App\State\WorkProcessor` qui wrappe le `PersistProcessor` Doctrine : (a) sur `POST`, pose `createdAt = now()` et assigne l'auteur courant si `author` est vide ; (b) sur toute opération, si `status === done` et `completedAt` est vide, pose `completedAt = now()`.
+
 ## Filtres & tri
 
 Les collections (`GET /api/<resource>`) acceptent des paramètres de recherche, de filtrage temporel et de tri via les filtres API Platform. Tous les paramètres sont combinables (AND).
@@ -160,6 +207,7 @@ Booléen accepté en `true` / `false` (ou `1` / `0`) : `?purchased=false`.
 | **ShoppingItem** | `name` (ipartial), `category` (exact) | — | `name`, `purchased` | `BooleanFilter` sur `purchased` |
 | **Note** | `title` (ipartial), `content` (ipartial), `author` (exact), `author.uuid` (exact) | `createdAt` | `createdAt`, `title` | — |
 | **Occupation** | `occupant` (exact), `occupant.uuid` (exact), `notes` (ipartial) | `startDate`, `endDate` | `startDate`, `endDate` | — |
+| **Work** | `title` (ipartial), `description` (ipartial), `author.uuid` (exact), `status` (exact), `type` (exact), `priority` (exact) | `createdAt`, `scheduledFor` | `createdAt`, `scheduledFor`, `priority`, `status` | — |
 
 ### Exemples
 
@@ -175,6 +223,9 @@ GET /api/inventory_items?category=/api/categories/2&state=replace
 
 # Courses restantes triées par nom
 GET /api/shopping_items?purchased=false&order[name]=asc
+
+# Travaux planifiés ou en cours, prioritaires d'abord
+GET /api/works?status=planned&order[priority]=desc&order[scheduledFor]=asc
 ```
 
 ## Pagination & format

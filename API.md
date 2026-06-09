@@ -1,7 +1,14 @@
+<!--
+  Source de vérité : villard-api/API.md.
+  Dans villard-front/ et villard-appli/, ce fichier est synchronisé via `./scripts/sync-api-docs.sh`
+  (ou `npm run sync:docs`). Ne pas éditer la copie : modifier villard-api/API.md, push, puis re-sync.
+-->
+
 # Les Marmottes — API Reference
 
-Documentation de l'API backend (`villard-api`) à destination du client front (`villard-front`).
-Ce fichier est conçu pour être copié à la racine du repo front et lu directement par l'agent Claude du projet front.
+Documentation de l'API backend (`villard-api`) à destination des clients (web `villard-front` + mobile `villard-appli`).
+Ce fichier est synchronisé automatiquement depuis `villard-api` vers les repos consommateurs et lu directement par les
+agents Claude.
 
 > **Stack backend**: Symfony 8.1 + API Platform 4.x + Doctrine + MariaDB + LexikJWT + gesdinet/jwt-refresh-token-bundle.
 > **Préfixe global**: toutes les routes API sont sous `/api`.
@@ -296,6 +303,54 @@ Calendrier d'occupation de l'appartement.
 
 Dates au format ISO 8601 (`YYYY-MM-DD` accepté pour les `date_immutable`).
 
+### 4.7 Work — `/api/works`
+
+Travaux à réaliser dans l'appartement (bricolage à faire soi-même ou prestation externe). Suivi du cycle de vie via `status`,
+priorisation et chiffrage estimé / réel.
+
+| Op                      | Sécurité                                          |
+|-------------------------|---------------------------------------------------|
+| GET (collection / item) | `ROLE_USER`                                       |
+| POST                    | `ROLE_ADMIN` **ou** auteur = utilisateur courant  |
+| PUT / PATCH             | `ROLE_ADMIN` **ou** auteur (avant **et** après) = user courant |
+| DELETE                  | `ROLE_ADMIN` **ou** auteur = utilisateur courant  |
+
+```json
+{
+    "id": 5,
+    "title": "Repeindre les volets",
+    "description": "Décaper et appliquer 2 couches de peinture extérieure",
+    "status": "planned",
+    "type": "diy",
+    "priority": "medium",
+    "author": "/api/users/2",
+    "createdAt": "2026-06-09T09:30:00+00:00",
+    "scheduledFor": "2026-07-12",
+    "completedAt": null,
+    "estimatedCost": 120,
+    "actualCost": null
+}
+```
+
+Champs :
+
+- `title` (string, **requis**, 255 caractères).
+- `description` (text, optionnel) — texte long libre.
+- `status` (enum, défaut `"suggested"`) : `"suggested"`, `"planned"`, `"in_progress"`, `"done"`, `"cancelled"`.
+- `type` (enum, optionnel) : `"diy"` (à faire soi-même) ou `"pro"` (à faire faire).
+- `priority` (enum, optionnel) : `"low"`, `"medium"`, `"high"`.
+- `author` (IRI User, **requis**) — auto-rempli avec l'utilisateur courant en `POST` si omis.
+- `createdAt` (datetime, ISO 8601) — **auto-rempli côté serveur à la création**, lecture seule.
+- `scheduledFor` (date, `YYYY-MM-DD`, optionnel) — date prévue.
+- `completedAt` (datetime, optionnel) — **auto-rempli côté serveur dès que `status` passe à `"done"`** si non fourni
+  (sur n'importe quelle opération, `POST` comme `PUT`/`PATCH`).
+- `estimatedCost` (int, optionnel) — en euros.
+- `actualCost` (int, optionnel) — en euros.
+
+> Implémenté via le processor `App\State\WorkProcessor`. À la création (`POST`), il pose `createdAt = now()` et assigne
+> `author = utilisateur courant` si le champ est vide. À chaque écriture (toutes opérations), si `status === "done"` et
+> que `completedAt` n'est pas fourni, le serveur le pose à `now()`.
+
 ---
 
 ## 5. Exemples d'appels (front)
@@ -388,7 +443,7 @@ await api('/occupations', {
    ouvrir une issue plutôt que de bidouiller. L'API doit rester consommable par d'autres clients (mobile à venir).
 6. La pluralisation des URLs suit la convention API Platform : `Category → categories`,
    `InventoryItem → inventory_items`, `ShoppingItem → shopping_items`, `Note → notes`, `Occupation → occupations`,
-   `User → users`.
+   `Work → works`, `User → users`.
 
 ---
 
@@ -491,6 +546,7 @@ paramètres se combinent en AND.
 | `ShoppingItem`  | `name` (ipartial), `category` (exact)                                                            | —                      | `name`, `purchased`         | `purchased` |
 | `Note`          | `title` (ipartial), `content` (ipartial), `author` (exact), `author.uuid` (exact)                | `createdAt`            | `createdAt`, `title`        | —           |
 | `Occupation`    | `occupant` (exact), `occupant.uuid` (exact), `notes` (ipartial)                                  | `startDate`, `endDate` | `startDate`, `endDate`      | —           |
+| `Work`          | `title` (ipartial), `description` (ipartial), `author.uuid` (exact), `status` (exact), `type` (exact), `priority` (exact) | `createdAt`, `scheduledFor` | `createdAt`, `scheduledFor`, `priority`, `status` | —           |
 
 ### Exemples
 
@@ -506,6 +562,9 @@ GET /api/inventory_items?category=/api/categories/2&state=replace
 
 # Courses restantes triées par nom
 GET /api/shopping_items?purchased=false&order[name]=asc
+
+# Travaux planifiés ou en cours, prioritaires d'abord
+GET /api/works?status=planned&order[priority]=desc&order[scheduledFor]=asc
 ```
 
 Les filtres apparaissent aussi dans `/api/docs` (Swagger UI) pour chaque collection.
