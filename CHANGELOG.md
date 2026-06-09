@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+
+## [1.1.0] - 2026-06-09
+
+### Added
+- Extend refresh token to 90 days
+- add app version controller and endpoint
+- introduce work entity and endpoint
 
 ## [1.0.0] - 2026-06-08
 
@@ -13,5 +19,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
-[Unreleased]: https://github.com/callmetrinity/bingo/compare/1.0.0...main
-[1.0.0]: https://github.com/callmetrinity/villard-api/releases/tag/1.0.0
+[1.1.0]: https://github.com/marmottes-industries/villard-api/compare/1.0.0...1.1.0
+[1.0.0]: https://github.com/marmottes-industries/villard-api/compare/1.0.0...main
