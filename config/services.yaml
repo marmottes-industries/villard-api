@@ -7,6 +7,10 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    app.version.latest: '%env(APP_VERSION_LATEST)%'
+    app.version.min: '%env(APP_VERSION_MIN)%'
+    app.store.ios_url: '%env(APP_STORE_IOS_URL)%'
+    app.store.android_url: '%env(APP_STORE_ANDROID_URL)%'
 
 services:
     # default configuration for services in *this* file
@@ -18,6 +22,12 @@ services:
     # this creates a service per class whose id is the fully-qualified class name
     App\:
         resource: '../src/'
-
+    App\Controller\AppVersionController:
+        arguments:
+            $latestVersion: '%app.version.latest%'
+            $minVersion: '%app.version.min%'
+            $iosStoreUrl: '%app.store.ios_url%'
+            $androidStoreUrl: '%app.store.android_url%'
+        tags: [ 'controller.service_arguments' ]
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
