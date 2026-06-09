@@ -7,6 +7,8 @@ use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\State\ProcessorInterface;
 use App\Entity\Note;
+use App\Entity\User;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -17,6 +19,7 @@ final readonly class NoteProcessor implements ProcessorInterface
     public function __construct(
         #[Autowire(service: PersistProcessor::class)]
         private ProcessorInterface $persistProcessor,
+        private Security $security,
     ) {
     }
 
@@ -24,6 +27,13 @@ final readonly class NoteProcessor implements ProcessorInterface
     {
         if ($operation instanceof Post && $data instanceof Note) {
             $data->setCreatedAt(new \DateTimeImmutable());
+
+            if ($data->getAuthor() === null) {
+                $user = $this->security->getUser();
+                if ($user instanceof User) {
+                    $data->setAuthor($user);
+                }
+            }
         }
 
         return $this->persistProcessor->process($data, $operation, $uriVariables, $context);
