@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+source ~/.bashrc
+
 git fetch --tags
 # shellcheck disable=SC2046
 git checkout $(git tag --sort=-version:refname | head -1)
