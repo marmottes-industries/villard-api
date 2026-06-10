@@ -1,0 +1,8 @@
+# Désactive la documentation Swagger/OpenAPI/ReDoc en production :
+# elle exposerait la cartographie complète des endpoints à un anonyme.
+# L'entrypoint Hydra (/api) reste actif mais est déjà protégé par
+# IS_AUTHENTICATED_FULLY dans security.yaml.
+api_platform:
+    enable_docs: false
+    enable_swagger_ui: false
+    enable_re_doc: false
