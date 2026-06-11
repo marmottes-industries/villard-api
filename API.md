@@ -666,13 +666,36 @@ push.
 
 ### 11.3 Déclenchement serveur (cron)
 
-La notification de fin de séjour est dispatchée par une commande à lancer **une fois par jour** (cron / planificateur
-Infomaniak) :
+La notification de fin de séjour est dispatchée **une fois par jour**. Deux points d'entrée équivalents, qui partagent
+la même logique (`OccupationEndNotificationDispatcher`) :
+
+**a) Commande CLI** — pour un cron disposant d'un shell (SSH / VPS) ou pour tester :
 
 ```bash
 php bin/console app:notifications:dispatch-occupation-end
 # option de test : --date=2026-07-15 pour rejouer un jour de référence donné
 ```
 
-> Le front n'appelle pas cette commande — elle est purement backend. Côté client, seule l'inscription du device token
-> (§4.8) et l'`email` (§4.1) conditionnent la réception.
+**b) Endpoint HTTP** — `GET /api/cron/occupation-end-notifications` — pour un planificateur qui ne sait qu'appeler une
+URL (cas du planificateur de tâches Infomaniak en hébergement mutualisé).
+
+| Élément        | Valeur                                                                              |
+|----------------|-------------------------------------------------------------------------------------|
+| Méthode        | `GET`                                                                               |
+| Auth           | **Public** (`PUBLIC_ACCESS`), protégé par un secret partagé en query string         |
+| Query          | `token` — doit être égal à `APP_CRON_SECRET` côté serveur (comparé en constant-time) |
+| `200`          | `{ "date": "2026-07-15", "dispatched": 2 }`                                         |
+| `403`          | token absent ou invalide                                                            |
+
+```bash
+curl "https://<api>/api/cron/occupation-end-notifications?token=<APP_CRON_SECRET>"
+# -> {"date":"2026-06-11","dispatched":0}
+```
+
+Configuration côté Infomaniak (Hébergement → Web → Planificateur de tâches) : URL à exécuter =
+`https://<api>/api/cron/occupation-end-notifications?token=<APP_CRON_SECRET>`, fréquence **1×/jour**. Le secret en clair
+dans l'URL doit être identique à `APP_CRON_SECRET` (défini en prod via `.env.prod.local`, jamais commité).
+
+> Le front n'appelle ni la commande ni cet endpoint — c'est purement backend. Côté client, seule l'inscription du device
+> token (§4.8) et l'`email` (§4.1) conditionnent la réception. L'envoi reste **idempotent** quel que soit le point
+> d'entrée, donc déclencher plusieurs fois par jour est sans risque.
