@@ -116,6 +116,11 @@ php bin/console doctrine:fixtures:load
 # Utilisateurs
 php bin/console app:create-user <username>             # admin par défaut
 php bin/console app:create-user <username> --no-admin
+php bin/console app:create-user <username> --email <adresse>   # email = destinataire des notifications
+
+# Notifications de fin de séjour (à lancer une fois par jour via cron)
+php bin/console app:notifications:dispatch-occupation-end
+php bin/console app:notifications:dispatch-occupation-end --date=2026-06-11   # forcer un jour (tests)
 
 # Outillage Symfony
 php bin/console debug:router
@@ -124,10 +129,39 @@ php bin/console cache:clear
 
 ---
 
+## Notifications
+
+Système extensible (`src/Notification/`) qui envoie une notification à un
+utilisateur sur un ou plusieurs canaux (`Channel::Mail`, `Channel::Push`).
+
+- **Mail** via Symfony Mailer (`MAILER_DSN`), expéditeur `MAILER_FROM`
+  (`contact@antoninpamart.fr`). En prod : SMTP Infomaniak
+  `smtp://contact%40antoninpamart.fr:MOT_DE_PASSE@mail.infomaniak.com:587`
+  — **ne pas committer le mot de passe** (utiliser `secrets:set` ou une variable
+  d'env serveur). En dev : Mailpit (UI sur le port `8025` du conteneur).
+- **Push** via l'API Expo Push, ciblant les `DeviceToken` enregistrés par l'app
+  (`POST /api/device_tokens`). Les tokens invalides sont purgés automatiquement.
+
+**Ajouter une notification** : créer une classe implémentant
+`App\Notification\AppNotification` et appeler `Notifier::send()`. Aucun changement
+de transport requis. Exemple : `OccupationEndingNotification`.
+
+**Fin de séjour** : la commande `app:notifications:dispatch-occupation-end`
+notifie l'occupant le jour de `endDate` (mail + push), une seule fois
+(idempotent via `occupation.end_notified_at`). La planifier **une fois par jour**
+dans le gestionnaire de tâches cron d'Infomaniak, p.ex. à 09h00 :
+
+```
+0 9 * * *  cd /chemin/villard-api && php bin/console app:notifications:dispatch-occupation-end
+```
+
+Le lien présent dans l'email pointe vers le front web (`APP_WEB_URL`).
+
+---
+
 ## Perspectives
 
 - **Client mobile** — choix techno à arbitrer (Hotwire Native, React Native, Flutter, PWA). La même API sera consommée sans changement.
-- **Notifications** — rappels (arrivée prochaine, courses) via Symfony Messenger + workers.
 - **Multi-logements** — généralisation du modèle si d'autres biens s'ajoutent.
 - **Groupes de sérialisation** sur l'ensemble des entités (seul `User` les a aujourd'hui).
 

@@ -11,6 +11,9 @@ parameters:
     app.version.min: '%env(APP_VERSION_MIN)%'
     app.store.ios_url: '%env(APP_STORE_IOS_URL)%'
     app.store.android_url: '%env(APP_STORE_ANDROID_URL)%'
+    app.mailer.from: '%env(MAILER_FROM)%'
+    app.mailer.from_name: '%env(MAILER_FROM_NAME)%'
+    app.web_url: '%env(APP_WEB_URL)%'
 
 services:
     # default configuration for services in *this* file

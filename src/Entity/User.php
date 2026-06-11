@@ -20,6 +20,7 @@ use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Validator\Constraints as Assert;
 
 #[ApiResource(
     operations: [
@@ -65,6 +66,11 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[Groups(['user:read', 'user:write'])]
     private ?string $username = null;
 
+    #[ORM\Column(length: 180, nullable: true)]
+    #[Groups(['user:read', 'user:write'])]
+    #[Assert\Email]
+    private ?string $email = null;
+
     /**
      * @var list<string> The user roles
      */
@@ -90,11 +96,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\OneToMany(targetEntity: Note::class, mappedBy: 'author')]
     private Collection $notes;
 
+    /**
+     * @var Collection<int, DeviceToken>
+     */
+    #[ORM\OneToMany(targetEntity: DeviceToken::class, mappedBy: 'owner', cascade: ['remove'])]
+    private Collection $deviceTokens;
+
     public function __construct()
     {
         $this->uuid = Uuid::v4();
         $this->occupations = new ArrayCollection();
         $this->notes = new ArrayCollection();
+        $this->deviceTokens = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -115,6 +128,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setUsername(string $username): static
     {
         $this->username = $username;
+
+        return $this;
+    }
+
+    public function getEmail(): ?string
+    {
+        return $this->email;
+    }
+
+    public function setEmail(?string $email): static
+    {
+        $this->email = $email;
 
         return $this;
     }
@@ -221,6 +246,35 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
             // set the owning side to null (unless already changed)
             if ($note->getAuthor() === $this) {
                 $note->setAuthor(null);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, DeviceToken>
+     */
+    public function getDeviceTokens(): Collection
+    {
+        return $this->deviceTokens;
+    }
+
+    public function addDeviceToken(DeviceToken $deviceToken): static
+    {
+        if (!$this->deviceTokens->contains($deviceToken)) {
+            $this->deviceTokens->add($deviceToken);
+            $deviceToken->setOwner($this);
+        }
+
+        return $this;
+    }
+
+    public function removeDeviceToken(DeviceToken $deviceToken): static
+    {
+        if ($this->deviceTokens->removeElement($deviceToken)) {
+            if ($deviceToken->getOwner() === $this) {
+                $deviceToken->setOwner(null);
             }
         }
 

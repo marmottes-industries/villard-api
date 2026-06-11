@@ -30,6 +30,7 @@ class CreateUserCommand extends Command
     {
         $this
             ->addArgument('username', InputArgument::OPTIONAL, 'Username')
+            ->addOption('email', null, InputOption::VALUE_REQUIRED, 'Email address (used for notifications)')
             ->addOption('no-admin', null, InputOption::VALUE_NONE, 'Create a regular user instead of admin')
         ;
     }
@@ -39,6 +40,7 @@ class CreateUserCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         $username = $input->getArgument('username') ?? $io->ask('Username');
+        $email = $input->getOption('email') ?? $io->ask('Email (optional, for notifications)', '');
         $password = $io->askHidden('Password');
 
         if (!$username || !$password) {
@@ -48,6 +50,9 @@ class CreateUserCommand extends Command
 
         $user = new User();
         $user->setUsername($username);
+        if ($email) {
+            $user->setEmail($email);
+        }
         $hashedPassword = $this->passwordHasher->hashPassword($user, $password);
         $user->setPassword($hashedPassword);
         $user->setRoles($input->getOption('no-admin') ? ['ROLE_USER'] : ['ROLE_ADMIN']);

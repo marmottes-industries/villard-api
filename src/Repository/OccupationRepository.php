@@ -16,6 +16,22 @@ class OccupationRepository extends ServiceEntityRepository
         parent::__construct($registry, Occupation::class);
     }
 
+    /**
+     * Occupations whose stay ends on the given day and that have not yet been
+     * notified. Used by the daily end-of-stay notification command.
+     *
+     * @return Occupation[]
+     */
+    public function findEndingOn(\DateTimeImmutable $day): array
+    {
+        return $this->createQueryBuilder('o')
+            ->andWhere('o.endDate = :day')
+            ->andWhere('o.endNotifiedAt IS NULL')
+            ->setParameter('day', $day->format('Y-m-d'))
+            ->getQuery()
+            ->getResult();
+    }
+
     //    /**
     //     * @return Occupation[] Returns an array of Occupation objects
     //     */

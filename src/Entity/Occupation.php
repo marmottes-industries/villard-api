@@ -6,6 +6,7 @@ use ApiPlatform\Doctrine\Orm\Filter\DateFilter;
 use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
+use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
@@ -55,6 +56,14 @@ class Occupation
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $notes = null;
 
+    /**
+     * Set once the "end of stay" notification has been dispatched, so the daily
+     * command stays idempotent and never notifies the same stay twice.
+     */
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    #[ApiProperty(writable: false)]
+    private ?\DateTimeImmutable $endNotifiedAt = null;
+
     #[ORM\ManyToOne(inversedBy: 'occupations')]
     #[ORM\JoinColumn(nullable: false)]
     private ?User $occupant = null;
@@ -96,6 +105,18 @@ class Occupation
     public function setNotes(?string $notes): static
     {
         $this->notes = $notes;
+
+        return $this;
+    }
+
+    public function getEndNotifiedAt(): ?\DateTimeImmutable
+    {
+        return $this->endNotifiedAt;
+    }
+
+    public function setEndNotifiedAt(?\DateTimeImmutable $endNotifiedAt): static
+    {
+        $this->endNotifiedAt = $endNotifiedAt;
 
         return $this;
     }
