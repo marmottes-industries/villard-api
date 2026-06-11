@@ -2,21 +2,21 @@
 
 namespace App\Command;
 
-use App\Notification\Notifier;
-use App\Notification\OccupationEndingNotification;
-use App\Repository\OccupationRepository;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Notification\OccupationEndNotificationDispatcher;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Sends the end-of-stay notification for every occupation ending today.
- * Meant to be run once a day from cron (Infomaniak task scheduler):
+ *
+ * On Infomaniak shared hosting the task scheduler can only call a URL, so in
+ * production this is triggered through the HTTP endpoint
+ * GET /api/cron/occupation-end-notifications (see CronController). This command
+ * stays available for local runs / manual testing over SSH:
  *
  *   php bin/console app:notifications:dispatch-occupation-end
  *
@@ -30,11 +30,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 final class DispatchOccupationEndNotificationsCommand extends Command
 {
     public function __construct(
-        private readonly OccupationRepository $occupations,
-        private readonly Notifier $notifier,
-        private readonly EntityManagerInterface $em,
-        #[Autowire('%app.web_url%')]
-        private readonly string $webUrl,
+        private readonly OccupationEndNotificationDispatcher $dispatcher,
     ) {
         parent::__construct();
     }
@@ -64,22 +60,13 @@ final class DispatchOccupationEndNotificationsCommand extends Command
             return Command::FAILURE;
         }
 
-        $occupations = $this->occupations->findEndingOn($day);
+        $sent = $this->dispatcher->dispatch($day);
 
-        if (!$occupations) {
+        if (0 === $sent) {
             $io->success(sprintf('No stay ending on %s — nothing to send.', $day->format('Y-m-d')));
 
             return Command::SUCCESS;
         }
-
-        $sent = 0;
-        foreach ($occupations as $occupation) {
-            $this->notifier->send(new OccupationEndingNotification($occupation, $this->webUrl));
-            $occupation->setEndNotifiedAt(new \DateTimeImmutable());
-            ++$sent;
-        }
-
-        $this->em->flush();
 
         $io->success(sprintf('Dispatched %d end-of-stay notification(s) for %s.', $sent, $day->format('Y-m-d')));
 
