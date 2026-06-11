@@ -184,18 +184,23 @@ Authentification système. **Identifiant URL = `id` numérique.** L'`uuid` est i
 {
     "id": 1,
     "username": "alice",
+    "email": "alice@example.com",
     "roles": [
         "ROLE_USER"
     ]
 }
 ```
 
-**Écriture (`user:write`)** — seul `username` est exposé en write par les groupes de sérialisation. Le mot de passe
-n'est pas modifiable via cet endpoint.
+**Écriture (`user:write`)** — `username` et `email` sont exposés en write par les groupes de sérialisation. Le mot de
+passe n'est pas modifiable via cet endpoint.
+
+- `email` (string, optionnel) — adresse de notification. Validée (`Assert\Email`). Sert à l'envoi des e-mails du système
+  de notification (cf. §11). `null` = l'utilisateur ne recevra pas d'e-mail.
 
 > ⚠️ **Conséquence** : `POST /api/users` ne peut pas définir de mot de passe → impossible de créer un compte utilisable
 > directement par l'API tant que `password` n'est pas ajouté au groupe `user:write`. Pour créer un user en pratique,
-> utiliser la commande CLI côté backend : `php bin/console app:create-user <username>` (cf. `CreateUserCommand`).
+> utiliser la commande CLI côté backend : `php bin/console app:create-user <username> [--email <email>]`
+> (cf. `CreateUserCommand`).
 
 ### 4.2 Category — `/api/categories`
 
@@ -297,11 +302,16 @@ Calendrier d'occupation de l'appartement.
     "startDate": "2026-07-01",
     "endDate": "2026-07-15",
     "notes": "Vacances d'été",
-    "occupant": "/api/users/2"
+    "occupant": "/api/users/2",
+    "endNotifiedAt": null
 }
 ```
 
 Dates au format ISO 8601 (`YYYY-MM-DD` accepté pour les `date_immutable`).
+
+- `endNotifiedAt` (datetime, **lecture seule**) — horodatage interne posé par la commande de notification de fin de
+  séjour (cf. §11) pour garantir son idempotence. Toute valeur envoyée par le client est ignorée. Vaut `null` tant
+  qu'aucune notification de fin n'a été émise pour cette occupation.
 
 ### 4.7 Work — `/api/works`
 
@@ -350,6 +360,55 @@ Champs :
 > Implémenté via le processor `App\State\WorkProcessor`. À la création (`POST`), il pose `createdAt = now()` et assigne
 > `author = utilisateur courant` si le champ est vide. À chaque écriture (toutes opérations), si `status === "done"` et
 > que `completedAt` n'est pas fourni, le serveur le pose à `now()`.
+
+### 4.8 DeviceToken — `/api/device_tokens`
+
+Cible de notification push enregistrée par un client (une ligne par appareil/install). Le `token` est un **Expo push
+token** (`"ExponentPushToken[…]"`). Sert au système de notification push (cf. §11).
+
+| Op            | Sécurité                                       |
+|---------------|------------------------------------------------|
+| GET collection| `ROLE_ADMIN`                                   |
+| GET item      | `ROLE_ADMIN` **ou** propriétaire du token      |
+| POST          | `ROLE_USER`                                     |
+| DELETE        | `ROLE_ADMIN` **ou** propriétaire du token      |
+
+Pas de `PUT`/`PATCH` : la mise à jour se fait par ré-enregistrement (upsert, voir ci-dessous).
+
+**Lecture (`device_token:read`)**
+
+```json
+{
+    "id": 9,
+    "token": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+    "platform": "ios",
+    "owner": "/api/users/2",
+    "createdAt": "2026-06-11T08:30:00+00:00",
+    "lastSeenAt": "2026-06-11T08:30:00+00:00"
+}
+```
+
+**Écriture (`device_token:write`)** — seuls `token` et `platform` sont acceptés :
+
+```json
+{
+    "token": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+    "platform": "ios"
+}
+```
+
+Champs :
+
+- `token` (string, **requis**, unique) — Expo push token de l'install.
+- `platform` (enum, **requis**) : `"ios"`, `"android"` ou `"web"`.
+- `owner` (IRI User, **lecture seule**) — auto-assigné à l'utilisateur courant en `POST`.
+- `createdAt` / `lastSeenAt` (datetime, **lecture seule**) — auto-remplis côté serveur.
+
+> **Upsert par `token`** (processor `App\State\DeviceTokenProcessor`) : ré-enregistrer le même token (typiquement à
+> chaque login) **ne crée pas de doublon** — la ligne existante est réutilisée, son `owner` ré-assigné à l'utilisateur
+> courant et `lastSeenAt` mis à `now()`. Le client peut donc `POST` le même token sans gérer l'existant lui-même.
+> Pour désinscrire un appareil (logout, désactivation des notifs) : `DELETE /api/device_tokens/{id}`. La suppression
+> d'un utilisateur supprime ses device tokens en cascade.
 
 ---
 
@@ -443,7 +502,7 @@ await api('/occupations', {
    ouvrir une issue plutôt que de bidouiller. L'API doit rester consommable par d'autres clients (mobile à venir).
 6. La pluralisation des URLs suit la convention API Platform : `Category → categories`,
    `InventoryItem → inventory_items`, `ShoppingItem → shopping_items`, `Note → notes`, `Occupation → occupations`,
-   `Work → works`, `User → users`.
+   `Work → works`, `User → users`, `DeviceToken → device_tokens`.
 
 ---
 
@@ -577,3 +636,43 @@ Les filtres apparaissent aussi dans `/api/docs` (Swagger UI) pour chaque collect
 
 - **Création de mot de passe via `POST /api/users`** — actuellement le champ `password` n'est pas dans `user:write` (
   cf. § 4.1).
+
+---
+
+## 11. Notifications (push + e-mail)
+
+Système de notification multi-canal introduit en **v1.2.0**. Deux canaux : **push** (via Expo) et **e-mail** (via le
+mailer Symfony). L'envoi est piloté côté serveur ; le front n'a qu'à **enregistrer son device token** pour recevoir le
+push.
+
+### 11.1 Ce que le client doit faire
+
+1. Obtenir l'Expo push token de l'install (côté app mobile, via `expo-notifications`).
+2. L'enregistrer : `POST /api/device_tokens` avec `{ "token": "ExponentPushToken[…]", "platform": "ios" }` (cf. §4.8).
+   À refaire à chaque login — l'upsert serveur évite les doublons.
+3. (Optionnel) Renseigner l'`email` du user (cf. §4.1) pour recevoir aussi les notifications par e-mail.
+4. Au logout / refus des notifications : `DELETE /api/device_tokens/{id}`.
+
+### 11.2 Notifications émises
+
+| Notification        | Déclencheur                              | Canaux        | Destinataire      |
+|---------------------|------------------------------------------|---------------|-------------------|
+| Fin de séjour       | Occupation dont `endDate` = aujourd'hui  | push + e-mail | l'`occupant`      |
+
+- Le push est envoyé à **tous les device tokens** de l'occupant ; l'e-mail à son `email` s'il est renseigné. Un canal
+  qui échoue n'empêche pas les autres (`Notifier` tolère les erreurs par canal).
+- L'envoi de la notification de fin de séjour est **idempotent** : l'occupation est estampillée `endNotifiedAt`
+  (cf. §4.6) une fois notifiée, donc relancer la commande ne renvoie jamais deux fois.
+
+### 11.3 Déclenchement serveur (cron)
+
+La notification de fin de séjour est dispatchée par une commande à lancer **une fois par jour** (cron / planificateur
+Infomaniak) :
+
+```bash
+php bin/console app:notifications:dispatch-occupation-end
+# option de test : --date=2026-07-15 pour rejouer un jour de référence donné
+```
+
+> Le front n'appelle pas cette commande — elle est purement backend. Côté client, seule l'inscription du device token
+> (§4.8) et l'`email` (§4.1) conditionnent la réception.
