@@ -8,6 +8,14 @@ services:
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:-db}
       MARIADB_USER: ${MARIADB_USER:-db}
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
+      # MYSQL_* aliases so the Symfony CLI builds DATABASE_URL with the app user
+      # (db:db). Without them it can't read MARIADB_USER and falls back to
+      # root + the app password (root:db) → "Access denied" 500 on every
+      # DB-touching request served via `symfony server:start`.
+      MYSQL_DATABASE: ${MARIADB_DATABASE:-db}
+      MYSQL_PASSWORD: ${MARIADB_PASSWORD:-db}
+      MYSQL_USER: ${MARIADB_USER:-db}
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       timeout: 5s
