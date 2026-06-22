@@ -15,6 +15,9 @@ parameters:
     app.mailer.from_name: '%env(MAILER_FROM_NAME)%'
     app.web_url: '%env(APP_WEB_URL)%'
     app.cron.secret: '%env(APP_CRON_SECRET)%'
+    app.weather.latitude: '%env(float:WEATHER_LATITUDE)%'
+    app.weather.longitude: '%env(float:WEATHER_LONGITUDE)%'
+    app.weather.timezone: '%env(WEATHER_TIMEZONE)%'
 
 services:
     # default configuration for services in *this* file
