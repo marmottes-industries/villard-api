@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-06-22
+
+### Added
+
+- Add weather forecast endpoint from open-Meteo data. 16 days forecast. For Villard and Côte 2000.
+
 ## [1.2.1] - 2026-06-11
 
 ### Fixed
@@ -38,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
+[unreleased]: https://github.com/marmottes-industries/villard-api/compare/v1.3.0...main
+[1.3.0]: https://github.com/marmottes-industries/villard-api/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/marmottes-industries/villard-api/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/marmottes-industries/villard-api/compare/1.1.1...v1.2.0
 [1.1.1]: https://github.com/marmottes-industries/villard-api/compare/1.1.0...1.1.1
