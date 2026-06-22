@@ -6,6 +6,7 @@ use App\ApiResource\WeatherForecast;
 use App\Weather\Dto\AirQuality;
 use App\Weather\Dto\CurrentWeather;
 use App\Weather\Dto\DailyForecast;
+use App\Weather\Dto\LocationForecast;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -36,7 +37,23 @@ final readonly class OpenMeteoClient
         #[Autowire('%app.weather.latitude%')] private float $latitude,
         #[Autowire('%app.weather.longitude%')] private float $longitude,
         #[Autowire('%app.weather.timezone%')] private string $timezone,
+        #[Autowire('%app.weather.cote2000.latitude%')] private float $cote2000Latitude,
+        #[Autowire('%app.weather.cote2000.longitude%')] private float $cote2000Longitude,
     ) {
+    }
+
+    /**
+     * The points we forecast, in display order. Villard (the apartment) first,
+     * then Côte 2000 (the ski/hiking area, ~600 m higher).
+     *
+     * @return list<array{key: string, name: string, lat: float, lon: float}>
+     */
+    private function locations(): array
+    {
+        return [
+            ['key' => 'villard', 'name' => 'Villard-de-Lans', 'lat' => $this->latitude, 'lon' => $this->longitude],
+            ['key' => 'cote2000', 'name' => 'Côte 2000', 'lat' => $this->cote2000Latitude, 'lon' => $this->cote2000Longitude],
+        ];
     }
 
     public function getForecast(): WeatherForecast
@@ -50,23 +67,28 @@ final readonly class OpenMeteoClient
 
     private function fetch(): WeatherForecast
     {
-        $forecast = $this->request(self::FORECAST_URL, [
-            'latitude' => $this->latitude,
-            'longitude' => $this->longitude,
-            'timezone' => $this->timezone,
-            'forecast_days' => self::FORECAST_DAYS,
-            'current' => 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m',
-            'daily' => 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,uv_index_max',
-        ]);
+        $locations = [];
+        foreach ($this->locations() as $loc) {
+            $forecast = $this->request(self::FORECAST_URL, [
+                'latitude' => $loc['lat'],
+                'longitude' => $loc['lon'],
+                'timezone' => $this->timezone,
+                'forecast_days' => self::FORECAST_DAYS,
+                'current' => 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m,snow_depth',
+                'daily' => 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,uv_index_max',
+            ]);
 
-        $air = $this->request(self::AIR_QUALITY_URL, [
-            'latitude' => $this->latitude,
-            'longitude' => $this->longitude,
-            'timezone' => $this->timezone,
-            'current' => 'european_aqi,pm2_5,pm10',
-        ]);
+            $air = $this->request(self::AIR_QUALITY_URL, [
+                'latitude' => $loc['lat'],
+                'longitude' => $loc['lon'],
+                'timezone' => $this->timezone,
+                'current' => 'european_aqi,pm2_5,pm10',
+            ]);
 
-        return $this->map($forecast, $air);
+            $locations[] = $this->mapLocation($loc, $forecast, $air);
+        }
+
+        return new WeatherForecast($this->timezone, $locations);
     }
 
     /**
@@ -86,10 +108,11 @@ final readonly class OpenMeteoClient
     }
 
     /**
-     * @param array<string, mixed> $forecast
-     * @param array<string, mixed> $air
+     * @param array{key: string, name: string, lat: float, lon: float} $loc
+     * @param array<string, mixed>                                      $forecast
+     * @param array<string, mixed>                                      $air
      */
-    private function map(array $forecast, array $air): WeatherForecast
+    private function mapLocation(array $loc, array $forecast, array $air): LocationForecast
     {
         $c = $forecast['current'] ?? [];
         $current = new CurrentWeather(
@@ -98,6 +121,7 @@ final readonly class OpenMeteoClient
             weatherCode: (int) ($c['weather_code'] ?? 0),
             windSpeed: (float) ($c['wind_speed_10m'] ?? 0),
             humidity: (int) ($c['relative_humidity_2m'] ?? 0),
+            snowDepth: (float) ($c['snow_depth'] ?? 0),
             time: (string) ($c['time'] ?? ''),
         );
 
@@ -123,10 +147,12 @@ final readonly class OpenMeteoClient
             pm10: isset($a['pm10']) ? (float) $a['pm10'] : null,
         );
 
-        return new WeatherForecast(
-            latitude: $this->latitude,
-            longitude: $this->longitude,
-            timezone: $this->timezone,
+        return new LocationForecast(
+            key: $loc['key'],
+            name: $loc['name'],
+            latitude: $loc['lat'],
+            longitude: $loc['lon'],
+            elevation: (float) ($forecast['elevation'] ?? 0),
             current: $current,
             daily: $daily,
             airQuality: $airQuality,

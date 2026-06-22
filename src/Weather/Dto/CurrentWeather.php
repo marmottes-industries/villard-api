@@ -13,6 +13,7 @@ final readonly class CurrentWeather
         public int $weatherCode,
         public float $windSpeed,
         public int $humidity,
+        public float $snowDepth,
         public string $time,
     ) {
     }

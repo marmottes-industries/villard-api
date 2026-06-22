@@ -18,6 +18,8 @@ parameters:
     app.weather.latitude: '%env(float:WEATHER_LATITUDE)%'
     app.weather.longitude: '%env(float:WEATHER_LONGITUDE)%'
     app.weather.timezone: '%env(WEATHER_TIMEZONE)%'
+    app.weather.cote2000.latitude: '%env(float:WEATHER_COTE2000_LATITUDE)%'
+    app.weather.cote2000.longitude: '%env(float:WEATHER_COTE2000_LONGITUDE)%'
 
 services:
     # default configuration for services in *this* file
