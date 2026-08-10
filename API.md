@@ -899,3 +899,85 @@ dans l'URL doit être identique à `APP_CRON_SECRET` (défini en prod via `.env.
 > Le front n'appelle ni la commande ni cet endpoint — c'est purement backend. Côté client, seule l'inscription du device
 > token (§4.8) et l'`email` (§4.1) conditionnent la réception. L'envoi reste **idempotent** quel que soit le point
 > d'entrée, donc déclencher plusieurs fois par jour est sans risque.
+
+---
+
+## 12. Endpoint `/api/weather` — météo du logement
+
+`GET /api/weather?property=<IRI>` (sécurité `IS_AUTHENTICATED_FULLY`). Ressource **singleton en lecture seule**,
+alimentée par [Open-Meteo](https://open-meteo.com) (pas de clé d'API), cachée **30 minutes par logement**.
+
+Les coordonnées sont portées par le logement lui-même, plus par une variable d'environnement. Chaque logement peut
+suivre deux points :
+
+| `key` | Ce que c'est | Toujours présent ? |
+|-------|--------------|--------------------|
+| `main` | Le logement lui-même (`latitude` / `longitude` de la `Property`) | oui |
+| `secondary` | Point secondaire optionnel, typiquement un domaine d'altitude | seulement si les trois champs `secondary*` sont renseignés |
+
+> ⚠️ **Ne pas coder en dur une clé de logement précis.** Les clés `main` / `secondary` sont stables d'un logement à
+> l'autre ; un logement sans point secondaire ne renvoie qu'une entrée, et le client doit le gérer.
+
+Le paramètre `property` suit la même règle que les créations (§2.5) : facultatif tant que l'utilisateur n'a qu'un seul
+logement, obligatoire au-delà.
+
+| Situation | Réponse |
+|-----------|---------|
+| `?property=` sur un logement autorisé | `200` |
+| `?property=` sur un logement non autorisé | `403` |
+| `?property=` sur un logement inexistant | `404` |
+| pas de `?property=`, utilisateur mono-logement | `200` — logement déduit |
+| pas de `?property=`, utilisateur multi-logements | `422` |
+
+**Réponse 200** (tronquée) :
+
+```json
+{
+    "timezone": "Europe/Paris",
+    "locations": [
+        {
+            "key": "main",
+            "name": "Les Marmottes",
+            "latitude": 45.064757765580204,
+            "longitude": 5.548400944891808,
+            "elevation": 996,
+            "current": {
+                "temperature": 19.8,
+                "apparentTemperature": 19.1,
+                "weatherCode": 3,
+                "windSpeed": 7.2,
+                "humidity": 62,
+                "snowDepth": 0,
+                "time": "2026-08-10T18:00"
+            },
+            "daily": [
+                {
+                    "date": "2026-08-10",
+                    "weatherCode": 3,
+                    "tempMin": 12.4,
+                    "tempMax": 24.1,
+                    "precipitation": 0.2,
+                    "snowfall": 0,
+                    "windMax": 14.8,
+                    "uvMax": 6.3
+                }
+            ],
+            "airQuality": {"europeanAqi": 21, "pm25": 4.1, "pm10": 8.7}
+        },
+        {
+            "key": "secondary",
+            "name": "Côte 2000",
+            "elevation": 1987,
+            "…": "même structure"
+        }
+    ]
+}
+```
+
+- `timezone` — celui du logement, pas celui du serveur ni du client.
+- `daily` — 16 jours (horizon maximum de l'offre gratuite Open-Meteo).
+- `elevation` — altitude renvoyée par Open-Meteo pour le point, utile pour expliquer l'écart entre les deux points.
+- `snowDepth` (m) et `snowfall` (cm) — pertinents en montagne, à `0` ailleurs.
+
+En cas d'indisponibilité d'Open-Meteo, l'API renvoie `502` avec un message explicite : à traiter comme une panne
+transitoire côté client (masquer le widget, ne pas bloquer l'écran).

@@ -12,14 +12,14 @@
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
                     <tr>
                         <td style="background-color:#2f5d50; padding:20px 28px;">
-                            <span style="color:#ffffff; font-size:18px; font-weight:600;">Les Marmottes</span>
+                            <span style="color:#ffffff; font-size:18px; font-weight:600;">{{ propertyName ?? 'Mon logement' }}</span>
                         </td>
                     </tr>
                     <tr>
                         <td style="padding:28px;">
                             <p style="margin:0 0 16px; font-size:16px;">Bonjour{% if username %} {{ username }}{% endif %},</p>
                             <p style="margin:0 0 16px; font-size:16px; line-height:1.5;">
-                                Vous arrivez à la fin de votre séjour{% if endDate %} (jusqu'au {{ endDate|date('d/m/Y') }}){% endif %}.
+                                Vous arrivez à la fin de votre séjour{% if endDate %} (jusqu'au {{ endDate|date('d/m/Y') }}){% endif %}.{# le logement est nommé dans le bandeau : l'insérer ici imposerait une préposition, fautive sur « Le Cabanon » #}
                                 Avez-vous pensé à mettre à jour l'inventaire et la liste de courses ?
                             </p>
                             <p style="margin:0 0 24px; font-size:16px; line-height:1.5;">
@@ -42,7 +42,7 @@
                     </tr>
                     <tr>
                         <td style="padding:16px 28px; background-color:#f4f6f5; font-size:12px; color:#9aa5a1;">
-                            Cet email vous est envoyé automatiquement par l'application Les Marmottes.
+                            Cet email vous est envoyé automatiquement par l'application.
                         </td>
                     </tr>
                 </table>

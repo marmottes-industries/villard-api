@@ -3,21 +3,26 @@
 namespace App\Weather;
 
 use App\ApiResource\WeatherForecast;
+use App\Entity\Property;
 use App\Weather\Dto\AirQuality;
 use App\Weather\Dto\CurrentWeather;
 use App\Weather\Dto\DailyForecast;
 use App\Weather\Dto\LocationForecast;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Fetches the weather for the apartment's coordinates from Open-Meteo (no API key
+ * Fetches the weather for a property's coordinates from Open-Meteo (no API key
  * required) and caches it. Two endpoints are queried: the forecast API and the
  * air-quality API (different base URLs).
+ *
+ * The points are carried by the {@see Property} itself, not by configuration:
+ * every property has its own coordinates, timezone and optional secondary point.
+ * The cache key is therefore **per property** — a shared key would serve one
+ * property's forecast for all of them.
  *
  * Mirrors the HttpClient usage in {@see \App\Notification\Transport\ExpoPushTransport}.
  */
@@ -26,7 +31,7 @@ final readonly class OpenMeteoClient
     private const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
     private const AIR_QUALITY_URL = 'https://air-quality-api.open-meteo.com/v1/air-quality';
 
-    private const CACHE_KEY = 'weather_villard';
+    private const CACHE_KEY_PREFIX = 'weather_property_';
     private const CACHE_TTL = 1800; // 30 min — Open-Meteo refreshes roughly hourly.
     private const FORECAST_DAYS = 16; // Open-Meteo free tier max horizon.
 
@@ -34,45 +39,61 @@ final readonly class OpenMeteoClient
         private HttpClientInterface $httpClient,
         private CacheInterface $cache,
         private LoggerInterface $logger,
-        #[Autowire('%app.weather.latitude%')] private float $latitude,
-        #[Autowire('%app.weather.longitude%')] private float $longitude,
-        #[Autowire('%app.weather.timezone%')] private string $timezone,
-        #[Autowire('%app.weather.cote2000.latitude%')] private float $cote2000Latitude,
-        #[Autowire('%app.weather.cote2000.longitude%')] private float $cote2000Longitude,
     ) {
     }
 
     /**
-     * The points we forecast, in display order. Villard (the apartment) first,
-     * then Côte 2000 (the ski/hiking area, ~600 m higher).
+     * The points we forecast for this property, in display order: the property
+     * itself first, then its optional secondary point (a ski/hiking area, say,
+     * which sits higher and has its own snow depth and temperatures).
+     *
+     * The `main` / `secondary` keys are stable across properties so a client can
+     * address them without knowing the property.
      *
      * @return list<array{key: string, name: string, lat: float, lon: float}>
      */
-    private function locations(): array
+    private function locations(Property $property): array
     {
-        return [
-            ['key' => 'villard', 'name' => 'Villard-de-Lans', 'lat' => $this->latitude, 'lon' => $this->longitude],
-            ['key' => 'cote2000', 'name' => 'Côte 2000', 'lat' => $this->cote2000Latitude, 'lon' => $this->cote2000Longitude],
-        ];
+        $locations = [[
+            'key' => 'main',
+            'name' => $property->getName() ?? (string) $property->getCity(),
+            'lat' => (float) $property->getLatitude(),
+            'lon' => (float) $property->getLongitude(),
+        ]];
+
+        if ($property->hasSecondaryLocation()) {
+            $locations[] = [
+                'key' => 'secondary',
+                'name' => (string) $property->getSecondaryLocationName(),
+                'lat' => (float) $property->getSecondaryLatitude(),
+                'lon' => (float) $property->getSecondaryLongitude(),
+            ];
+        }
+
+        return $locations;
     }
 
-    public function getForecast(): WeatherForecast
+    public function getForecast(Property $property): WeatherForecast
     {
-        return $this->cache->get(self::CACHE_KEY, function (ItemInterface $item): WeatherForecast {
+        $key = self::CACHE_KEY_PREFIX.$property->getId();
+
+        return $this->cache->get($key, function (ItemInterface $item) use ($property): WeatherForecast {
             $item->expiresAfter(self::CACHE_TTL);
 
-            return $this->fetch();
+            return $this->fetch($property);
         });
     }
 
-    private function fetch(): WeatherForecast
+    private function fetch(Property $property): WeatherForecast
     {
+        $timezone = $property->getTimezone();
         $locations = [];
-        foreach ($this->locations() as $loc) {
+
+        foreach ($this->locations($property) as $loc) {
             $forecast = $this->request(self::FORECAST_URL, [
                 'latitude' => $loc['lat'],
                 'longitude' => $loc['lon'],
-                'timezone' => $this->timezone,
+                'timezone' => $timezone,
                 'forecast_days' => self::FORECAST_DAYS,
                 'current' => 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m,snow_depth',
                 'daily' => 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,wind_speed_10m_max,uv_index_max',
@@ -81,14 +102,14 @@ final readonly class OpenMeteoClient
             $air = $this->request(self::AIR_QUALITY_URL, [
                 'latitude' => $loc['lat'],
                 'longitude' => $loc['lon'],
-                'timezone' => $this->timezone,
+                'timezone' => $timezone,
                 'current' => 'european_aqi,pm2_5,pm10',
             ]);
 
             $locations[] = $this->mapLocation($loc, $forecast, $air);
         }
 
-        return new WeatherForecast($this->timezone, $locations);
+        return new WeatherForecast($timezone, $locations);
     }
 
     /**

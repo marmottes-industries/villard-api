@@ -3,9 +3,13 @@
 namespace App\Weather\Dto;
 
 /**
- * Forecast for one named point. The app shows two: the apartment (Villard-de-Lans)
- * and the ski/hiking area (Côte 2000), which sits ~600 m higher and therefore has
- * its own conditions (snow depth, temperatures).
+ * Forecast for one named point of a property. `key` is `main` (the property
+ * itself) or `secondary` (its optional second point — typically a ski/hiking
+ * area sitting several hundred metres higher, with its own snow depth and
+ * temperatures). A property without a secondary point yields a single entry.
+ *
+ * Les clés sont stables d'un logement à l'autre : un client peut cibler `main`
+ * sans connaître le logement affiché.
  */
 final readonly class LocationForecast
 {

@@ -82,6 +82,16 @@ Le second groupe embarque les logements de l'utilisateur dans `memberships`, au 
 
 Implémenté via le provider `App\State\MeProvider` ; voir [`authentication.md`](authentication.md#lendpoint-apime).
 
+### `GET /api/weather`
+
+Météo du logement, alimentée par Open-Meteo, cachée 30 min **par logement** (`weather_property_{id}`).
+`?property=<IRI>` facultatif tant que l'utilisateur n'a qu'un logement. Deux points au maximum, de clés stables
+`main` (le logement) et `secondary` (point d'altitude optionnel).
+
+Ressource non-Doctrine (`src/ApiResource/WeatherForecast.php`) : l'extension de cloisonnement ne s'y appliquant pas,
+c'est `App\State\WeatherProvider` qui contrôle explicitement l'appartenance. Détail du payload dans
+[`API.md`](../API.md#12-endpoint-apiweather--météo-du-logement).
+
 ### `POST /api/login`
 
 Login JSON (cf. `routes.yaml` et le firewall `login`). Retourne `{ "token": "..." }`. Voir [`authentication.md`](authentication.md#flux-dutilisation).
