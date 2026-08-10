@@ -2,7 +2,6 @@
 
 namespace App\State;
 
-use ApiPlatform\Doctrine\Common\State\PersistProcessor;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\State\ProcessorInterface;
@@ -10,7 +9,6 @@ use App\Entity\User;
 use App\Entity\Work;
 use App\Enum\WorkStatus;
 use Symfony\Bundle\SecurityBundle\Security;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * @implements ProcessorInterface<Work, Work>
@@ -18,8 +16,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 final readonly class WorkProcessor implements ProcessorInterface
 {
     public function __construct(
-        #[Autowire(service: PersistProcessor::class)]
-        private ProcessorInterface $persistProcessor,
+        // Chaîné sur PropertyScopeProcessor, qui délègue lui-même à
+        // PersistProcessor après avoir résolu et vérifié le logement.
+        private PropertyScopeProcessor $persistProcessor,
         private Security $security,
     ) {
     }

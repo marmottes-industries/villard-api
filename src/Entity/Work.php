@@ -24,21 +24,30 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * Cf. {@see Occupation} pour la logique des expressions de sécurité : lecture
+ * doublement gardée (extension Doctrine + voter), et logement nul toléré au
+ * `POST` le temps que le processor applique le repli mono-logement.
+ *
+ * Un auteur nul est toléré au `POST` pour la même raison d'ordonnancement,
+ * cf. {@see Note} : la création de travaux était en 403 pour tout utilisateur
+ * non `ROLE_ADMIN`, les deux clients ne transmettant pas `author`.
+ */
 #[ApiResource(
     operations: [
         new GetCollection(security: "is_granted('ROLE_USER')"),
-        new Get(security: "is_granted('ROLE_USER')"),
+        new Get(security: "is_granted('PROPERTY_VIEW', object.getProperty())"),
         new Post(
-            securityPostDenormalize: "is_granted('ROLE_ADMIN') or object.getAuthor() == user",
+            securityPostDenormalize: "(object.getProperty() == null or is_granted('PROPERTY_CONTRIBUTE', object.getProperty())) and (is_granted('PROPERTY_MANAGE', object.getProperty()) or object.getAuthor() == null or object.getAuthor() == user)",
             processor: WorkProcessor::class,
         ),
-        new Put(securityPostDenormalize: "is_granted('ROLE_ADMIN') or (object.getAuthor() == user and previous_object.getAuthor() == user)",
+        new Put(securityPostDenormalize: "is_granted('PROPERTY_CONTRIBUTE', object.getProperty()) and is_granted('PROPERTY_CONTRIBUTE', previous_object.getProperty()) and (is_granted('PROPERTY_MANAGE', previous_object.getProperty()) or (object.getAuthor() == user and previous_object.getAuthor() == user))",
             processor: WorkProcessor::class,
         ),
-        new Patch(securityPostDenormalize: "is_granted('ROLE_ADMIN') or (object.getAuthor() == user and previous_object.getAuthor() == user)",
+        new Patch(securityPostDenormalize: "is_granted('PROPERTY_CONTRIBUTE', object.getProperty()) and is_granted('PROPERTY_CONTRIBUTE', previous_object.getProperty()) and (is_granted('PROPERTY_MANAGE', previous_object.getProperty()) or (object.getAuthor() == user and previous_object.getAuthor() == user))",
             processor: WorkProcessor::class,
         ),
-        new Delete(security: "is_granted('ROLE_ADMIN') or object.getAuthor() == user"),
+        new Delete(security: "is_granted('PROPERTY_MANAGE', object.getProperty()) or (is_granted('PROPERTY_CONTRIBUTE', object.getProperty()) and object.getAuthor() == user)"),
     ]
 )]
 #[ApiFilter(SearchFilter::class, properties: [

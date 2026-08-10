@@ -16,18 +16,32 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Contract\PropertyScopedInterface;
 use App\Repository\OccupationRepository;
+use App\State\PropertyScopeProcessor;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * Les lectures sont déjà cloisonnées par {@see \App\Doctrine\PropertyScopeExtension} ;
+ * le `PROPERTY_VIEW` du `Get` est une seconde barrière assumée, l'extension
+ * seule ayant déjà laissé passer des IDOR dans d'autres projets.
+ *
+ * Au `POST`, un logement nul est toléré : c'est
+ * {@see \App\State\PropertyScopeProcessor} qui applique le repli mono-logement
+ * puis revérifie l'autorisation, la validation et la sécurité passant avant
+ * les processors dans le pipeline d'API Platform.
+ */
 #[ApiResource(
     operations: [
         new GetCollection(security: "is_granted('ROLE_USER')"),
-        new Get(security: "is_granted('ROLE_USER')"),
-        new Post(securityPostDenormalize: "is_granted('ROLE_ADMIN') or object.getOccupant() == user"),
-        new Put(securityPostDenormalize: "is_granted('ROLE_ADMIN') or (object.getOccupant() == user and previous_object.getOccupant() == user)"),
-        new Patch(securityPostDenormalize: "is_granted('ROLE_ADMIN') or (object.getOccupant() == user and previous_object.getOccupant() == user)"),
-        new Delete(security: "is_granted('ROLE_ADMIN') or object.getOccupant() == user"),
+        new Get(security: "is_granted('PROPERTY_VIEW', object.getProperty())"),
+        new Post(
+            securityPostDenormalize: "(object.getProperty() == null or is_granted('PROPERTY_CONTRIBUTE', object.getProperty())) and (is_granted('PROPERTY_MANAGE', object.getProperty()) or object.getOccupant() == user)",
+            processor: PropertyScopeProcessor::class,
+        ),
+        new Put(securityPostDenormalize: "is_granted('PROPERTY_CONTRIBUTE', object.getProperty()) and is_granted('PROPERTY_CONTRIBUTE', previous_object.getProperty()) and (is_granted('PROPERTY_MANAGE', previous_object.getProperty()) or (object.getOccupant() == user and previous_object.getOccupant() == user))"),
+        new Patch(securityPostDenormalize: "is_granted('PROPERTY_CONTRIBUTE', object.getProperty()) and is_granted('PROPERTY_CONTRIBUTE', previous_object.getProperty()) and (is_granted('PROPERTY_MANAGE', previous_object.getProperty()) or (object.getOccupant() == user and previous_object.getOccupant() == user))"),
+        new Delete(security: "is_granted('PROPERTY_MANAGE', object.getProperty()) or (is_granted('PROPERTY_CONTRIBUTE', object.getProperty()) and object.getOccupant() == user)"),
     ]
 )]
 #[ApiFilter(SearchFilter::class, properties: [

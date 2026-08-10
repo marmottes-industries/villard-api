@@ -7,32 +7,78 @@ Référence des entités exposées par API Platform. Toutes les routes sont pré
 ## Conventions
 
 - **Pluralisation des URLs** : convention API Platform en snake_case anglais.
-  `Category → /api/categories`, `InventoryItem → /api/inventory_items`, `ShoppingItem → /api/shopping_items`, `Note → /api/notes`, `Occupation → /api/occupations`, `Work → /api/works`, `User → /api/users`.
+  `Category → /api/categories`, `InventoryItem → /api/inventory_items`, `ShoppingItem → /api/shopping_items`, `Note → /api/notes`, `Occupation → /api/occupations`, `Work → /api/works`, `User → /api/users`, `Property → /api/properties`, `PropertyMember → /api/property_members`.
 - **Identifiants URL** : `id` numérique auto-incrémenté (sauf l'UUID interne du `User`, utilisé pour le JWT mais pas dans les URLs).
 - **Relations en écriture** : passer l'IRI (`"/api/categories/1"`), pas un id nu ni un objet imbriqué.
 - **PATCH** : `Content-Type: application/merge-patch+json` obligatoire (sinon 415).
 
+## Cloisonnement par logement
+
+Les cinq ressources métier — `Occupation`, `Work`, `InventoryItem`, `ShoppingItem`, `Note` — sont rattachées à un **logement** (`Property`) et cloisonnées côté serveur. Trois conséquences pour un client :
+
+1. **Aucun filtre à envoyer pour être en sécurité.** `GET /api/notes` ne renvoie déjà que les notes des logements dont l'utilisateur est membre. Le paramètre `?property=<IRI>` sert uniquement à restreindre à un logement précis (le logement actif du sélecteur), jamais à élargir : une IRI forgée sur un logement non autorisé renvoie une collection vide.
+2. **Les items d'un autre logement n'existent pas.** `GET /api/notes/42` sur une note d'un logement non autorisé renvoie `404`, pas `403` — la ressource est masquée avant même le contrôle de sécurité, ce qui évite de confirmer son existence. Idem quand une telle IRI apparaît dans un payload d'écriture : la réponse est `400 Item not found`.
+3. **Le champ `property` est requis en création**, avec un repli : si le payload l'omet et que l'utilisateur n'est membre que d'un seul logement, celui-ci est appliqué automatiquement (compatibilité des builds mobiles antérieurs). Au-delà d'un logement, la réponse est `422` avec un message explicite.
+
+`Category` reste **commune à tous les logements** : c'est un choix assumé, la même arborescence sert partout et un renommage impacte tout le monde.
+
+Le cloisonnement est appliqué par `App\Doctrine\PropertyScopeExtension` (lectures) et `App\Security\Voter\PropertyVoter` (écritures) ; voir [`architecture.md`](architecture.md#cloisonnement-multi-logements) et [`authentication.md`](authentication.md#rôles-locaux-et-propertyvoter).
+
 ## Matrice des opérations
 
-Chaque entité expose : `GET /collection`, `GET /{id}`, `POST /collection`, `PUT /{id}`, `PATCH /{id}`, `DELETE /{id}`.
+Chaque entité expose : `GET /collection`, `GET /{id}`, `POST /collection`, `PUT /{id}`, `PATCH /{id}`, `DELETE /{id}` (sauf `Property` et `PropertyMember`, sans `PUT`).
 
-| Ressource | GET | POST | PUT / PATCH | DELETE |
-|-----------|-----|------|-------------|--------|
-| **User** (`/api/users`) | `ROLE_USER` | `ROLE_ADMIN` | `ROLE_ADMIN` **ou** `object == user` | `ROLE_ADMIN` |
-| **Category** (`/api/categories`) | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` |
-| **InventoryItem** (`/api/inventory_items`) | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` | `ROLE_ADMIN` |
-| **ShoppingItem** (`/api/shopping_items`) | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` | `ROLE_ADMIN` |
-| **Note** (`/api/notes`) | `ROLE_USER` | `ROLE_ADMIN` **ou** auteur = user courant | `ROLE_ADMIN` **ou** auteur (avant **et** après) = user courant | `ROLE_ADMIN` **ou** auteur = user courant |
-| **Occupation** (`/api/occupations`) | `ROLE_USER` | `ROLE_ADMIN` **ou** occupant = user courant | `ROLE_ADMIN` **ou** occupant (avant **et** après) = user courant | `ROLE_ADMIN` **ou** occupant = user courant |
-| **Work** (`/api/works`) | `ROLE_USER` | `ROLE_ADMIN` **ou** auteur = user courant | `ROLE_ADMIN` **ou** auteur (avant **et** après) = user courant | `ROLE_ADMIN` **ou** auteur = user courant |
+Dans le tableau, `MEMBRE` et `GESTIONNAIRE` désignent les attributs `PROPERTY_CONTRIBUTE` et `PROPERTY_MANAGE` du voter, évalués sur le logement de la ressource. **`ROLE_ADMIN` satisfait toujours les deux**, sur tous les logements.
 
-> Les contrôles « avant et après » sur Note/Occupation/Work utilisent `securityPostDenormalize` : ils empêchent un utilisateur de réassigner un objet à un autre auteur/occupant (vérification simultanée de `object` et `previous_object`).
+| Ressource | GET collection | GET item | POST | PUT / PATCH | DELETE |
+|-----------|----------------|----------|------|-------------|--------|
+| **User** (`/api/users`) | `ROLE_USER` | `ROLE_USER` | `ROLE_ADMIN` | `ROLE_ADMIN` **ou** `object == user` | `ROLE_ADMIN` |
+| **Category** (`/api/categories`) | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` |
+| **Property** (`/api/properties`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `ROLE_ADMIN` | `GESTIONNAIRE` | `ROLE_ADMIN` |
+| **PropertyMember** (`/api/property_members`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `GESTIONNAIRE` | `GESTIONNAIRE` (avant **et** après) | `GESTIONNAIRE` |
+| **InventoryItem** (`/api/inventory_items`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `MEMBRE` | `MEMBRE` (avant **et** après) | `GESTIONNAIRE` |
+| **ShoppingItem** (`/api/shopping_items`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `MEMBRE` | `MEMBRE` (avant **et** après) | `GESTIONNAIRE` |
+| **Note** (`/api/notes`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `MEMBRE` | `MEMBRE` **et** (`GESTIONNAIRE` **ou** auteur avant **et** après = user courant) | `GESTIONNAIRE` **ou** auteur = user courant |
+| **Occupation** (`/api/occupations`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `MEMBRE` | `MEMBRE` **et** (`GESTIONNAIRE` **ou** occupant avant **et** après = user courant) | `GESTIONNAIRE` **ou** occupant = user courant |
+| **Work** (`/api/works`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `MEMBRE` | `MEMBRE` **et** (`GESTIONNAIRE` **ou** auteur avant **et** après = user courant) | `GESTIONNAIRE` **ou** auteur = user courant |
+
+> Les contrôles « avant et après » sur Note/Occupation/Work utilisent `securityPostDenormalize` : ils empêchent un utilisateur de réassigner un objet à un autre auteur/occupant, ou de le déplacer vers un logement dont il n'est pas membre (vérification simultanée de `object` et `previous_object`).
+
+**Changements de comportement introduits par le multi-logements :**
+
+- La suppression d'un `InventoryItem` ou d'un `ShoppingItem` passe de `ROLE_ADMIN` au **gestionnaire local** du logement. `ROLE_ADMIN` la conserve via le bypass du voter.
+- Le gestionnaire local peut modifier les notes, séjours et travaux des autres membres de son logement — capacité qui n'existait qu'au niveau `ROLE_ADMIN`.
+- `POST /api/notes` et `POST /api/works` acceptent désormais un `author` omis. C'était déjà l'intention des processors `NoteProcessor` / `WorkProcessor`, mais `securityPostDenormalize` s'exécutant **avant** eux, `object.getAuthor() == user` était toujours faux et la création renvoyait `403` à tout utilisateur non `ROLE_ADMIN` — ce que font pourtant le front Vue comme l'appli Expo, qui ne transmettent pas `author`.
 
 ## Endpoints custom
 
 ### `GET /api/me`
 
-Retourne l'utilisateur courant (sécurité `ROLE_USER`). Sérialisé avec le groupe `user:read`, IRI renvoyé sous la forme `/api/users/{id}`.
+Retourne l'utilisateur courant (sécurité `ROLE_USER`). Sérialisé avec les groupes `user:read` **et** `property:summary`, IRI renvoyé sous la forme `/api/users/{id}`.
+
+Le second groupe embarque les logements de l'utilisateur dans `memberships`, au lieu de simples IRIs : un client dispose ainsi de tout ce qu'il faut pour amorcer son sélecteur de logement sans second appel.
+
+```json
+{
+  "@id": "/api/users/2",
+  "id": 2,
+  "uuid": "80d900ea-…",
+  "username": "antonin",
+  "roles": ["ROLE_USER"],
+  "memberships": [
+    {
+      "@id": "/api/property_members/8",
+      "role": "manager",
+      "property": {
+        "@id": "/api/properties/1", "id": 1,
+        "name": "Les Marmottes", "slug": "les-marmottes", "city": "Villard-de-Lans",
+        "latitude": 45.0647, "longitude": 5.5484,
+        "timezone": "Europe/Paris", "archived": false
+      }
+    }
+  ]
+}
+```
 
 Implémenté via le provider `App\State\MeProvider` ; voir [`authentication.md`](authentication.md#lendpoint-apime).
 
@@ -58,7 +104,52 @@ Login JSON (cf. `routes.yaml` et le firewall `login`). Retourne `{ "token": "...
 
 > **Conséquence** : impossible de définir/modifier le mot de passe via l'API. Utilise `php bin/console app:create-user`.
 
-Relations (présentes en JSON-LD) : `occupations`, `notes`.
+Relations (présentes en JSON-LD) : `occupations`, `notes`, `memberships`.
+
+`memberships` est dans le groupe `user:read` : sur `/api/users/{id}` il sort en IRIs, sur `/api/me` les logements sont embarqués (cf. plus haut).
+
+### Property — `/api/properties`
+
+Un logement géré par l'application. Porte aussi ses coordonnées météo : le point principal et, optionnellement, un point secondaire d'altitude.
+
+| Champ | Type | Lecture (`property:read`) | Écriture (`property:write`) | Contraintes |
+|-------|------|---------------------------|------------------------------|-------------|
+| `id` | int | ✓ | — (auto) | — |
+| `name` | string (255) | ✓ | ✓ | requis |
+| `slug` | string (255) | ✓ | ✓ | requis, **unique**, `^[a-z0-9]+(-[a-z0-9]+)*$` |
+| `city` | string (255) | ✓ | ✓ | requis |
+| `address` | string (255) | ✓ | ✓ | optionnel |
+| `latitude` | float | ✓ | ✓ | requis, −90 → 90 |
+| `longitude` | float | ✓ | ✓ | requis, −180 → 180 |
+| `timezone` | string (64) | ✓ | ✓ | défaut `Europe/Paris`, fuseau valide |
+| `secondaryLocationName` | string (255) | ✓ | ✓ | optionnel — ex. « Côte 2000 » |
+| `secondaryLatitude` | float | ✓ | ✓ | optionnel |
+| `secondaryLongitude` | float | ✓ | ✓ | optionnel |
+| `archived` | bool | ✓ | ✓ | défaut `false` |
+
+> Le point secondaire n'est exploité par la météo que si ses **trois** champs sont renseignés ; sinon il est ignoré.
+
+Un sous-ensemble (`id`, `name`, `slug`, `city`, `latitude`, `longitude`, `timezone`, `archived`) porte aussi le groupe `property:summary`, utilisé par `/api/me`.
+
+### PropertyMember — `/api/property_members`
+
+Appartenance d'un utilisateur à un logement — la seule source de vérité du cloisonnement.
+
+| Champ | Type | Lecture (`member:read`) | Écriture (`member:write`) | Contraintes |
+|-------|------|-------------------------|----------------------------|-------------|
+| `id` | int | ✓ | — (auto) | — |
+| `property` | IRI Property | ✓ | ✓ | requis |
+| `user` | IRI User | ✓ | ✓ | requis |
+| `role` | `App\Enum\PropertyRole` | ✓ | ✓ | défaut `occupant` |
+
+Contrainte d'unicité sur le couple `(property, user)` : un utilisateur ne peut avoir qu'un rôle par logement.
+
+Enum `PropertyRole` (`src/Enum/PropertyRole.php`) :
+
+| Valeur | Label FR | Capacités |
+|--------|----------|-----------|
+| `manager` | Gestionnaire | Tout dans son logement : administration, membres, ressources des autres membres |
+| `occupant` | Occupant | Lecture complète, écriture sur ses propres séjours/notes/travaux, inventaire et courses |
 
 ### Category — `/api/categories`
 
@@ -84,6 +175,7 @@ Inventaire de l'appartement.
 | `state` | `App\Enum\State` (`ok` / `worn` / `replace`) | défaut `ok` |
 | `note` | string (255) | optionnel |
 | `location` | string (255) | optionnel |
+| `property` | IRI Property | **requis** — cf. [Cloisonnement par logement](#cloisonnement-par-logement) ; auto-rempli en `POST` si l'utilisateur n'a qu'un logement |
 
 Enum `State` (`src/Enum/State.php`) :
 
@@ -104,6 +196,7 @@ Liste de courses.
 | `quantity` | int | défaut 1 |
 | `purchased` | bool | défaut `false` |
 | `category` | IRI Category | **optionnel** |
+| `property` | IRI Property | **requis** — cf. [Cloisonnement par logement](#cloisonnement-par-logement) ; auto-rempli en `POST` si l'utilisateur n'a qu'un logement |
 
 ### Note — `/api/notes`
 
@@ -114,6 +207,7 @@ Liste de courses.
 | `content` | text | requis |
 | `createdAt` | datetime (ISO 8601) | **auto-rempli côté serveur à la création**, lecture seule (toute valeur envoyée par le client est ignorée) |
 | `author` | IRI User | **requis** |
+| `property` | IRI Property | **requis** — cf. [Cloisonnement par logement](#cloisonnement-par-logement) ; auto-rempli en `POST` si l'utilisateur n'a qu'un logement |
 
 > Implémenté via le processor `App\State\NoteProcessor` qui wrappe le `PersistProcessor` Doctrine et pose `createdAt = now()` sur l'opération `POST`. Le champ est marqué `#[ApiProperty(writable: false)]` pour éviter toute écriture client (y compris en PUT/PATCH).
 
@@ -128,6 +222,7 @@ Calendrier d'occupation de l'appartement.
 | `endDate` | date | requis |
 | `notes` | text | optionnel |
 | `occupant` | IRI User | **requis** |
+| `property` | IRI Property | **requis** — cf. [Cloisonnement par logement](#cloisonnement-par-logement) ; auto-rempli en `POST` si l'utilisateur n'a qu'un logement |
 
 ### Work — `/api/works`
 
@@ -147,6 +242,7 @@ Travaux à réaliser dans l'appartement (bricolage / prestation pro). Suivi de c
 | `completedAt` | datetime | **auto-rempli côté serveur dès que `status` passe à `done`** si non fourni (toutes opérations) |
 | `estimatedCost` | int | optionnel — en euros |
 | `actualCost` | int | optionnel — en euros |
+| `property` | IRI Property | **requis** — cf. [Cloisonnement par logement](#cloisonnement-par-logement) ; auto-rempli en `POST` si l'utilisateur n'a qu'un logement |
 
 Enum `WorkStatus` (`src/Enum/WorkStatus.php`) :
 
@@ -203,11 +299,13 @@ Booléen accepté en `true` / `false` (ou `1` / `0`) : `?purchased=false`.
 | Ressource | SearchFilter | DateFilter | OrderFilter | Autres |
 |-----------|--------------|------------|-------------|--------|
 | **Category** | `name` (ipartial) | — | `name` | — |
-| **InventoryItem** | `name` (ipartial), `category` (exact), `state` (exact), `note` (ipartial), `location` (ipartial) | — | `name`, `quantity`, `state` | — |
-| **ShoppingItem** | `name` (ipartial), `category` (exact) | — | `name`, `purchased` | `BooleanFilter` sur `purchased` |
-| **Note** | `title` (ipartial), `content` (ipartial), `author` (exact), `author.uuid` (exact) | `createdAt` | `createdAt`, `title` | — |
-| **Occupation** | `occupant` (exact), `occupant.uuid` (exact), `notes` (ipartial) | `startDate`, `endDate` | `startDate`, `endDate` | — |
-| **Work** | `title` (ipartial), `description` (ipartial), `author.uuid` (exact), `status` (exact), `type` (exact), `priority` (exact) | `createdAt`, `scheduledFor` | `createdAt`, `scheduledFor`, `priority`, `status` | — |
+| **Property** | `name` (ipartial), `slug` (exact), `city` (ipartial) | — | `name`, `city` | `BooleanFilter` sur `archived` |
+| **PropertyMember** | `property` (exact), `user` (exact), `user.uuid` (exact), `role` (exact) | — | — | — |
+| **InventoryItem** | `property` (exact), `name` (ipartial), `category` (exact), `state` (exact), `note` (ipartial), `location` (ipartial) | — | `name`, `quantity`, `state` | — |
+| **ShoppingItem** | `property` (exact), `name` (ipartial), `category` (exact) | — | `name`, `purchased` | `BooleanFilter` sur `purchased` |
+| **Note** | `property` (exact), `title` (ipartial), `content` (ipartial), `author` (exact), `author.uuid` (exact) | `createdAt` | `createdAt`, `title` | — |
+| **Occupation** | `property` (exact), `occupant` (exact), `occupant.uuid` (exact), `notes` (ipartial) | `startDate`, `endDate` | `startDate`, `endDate` | — |
+| **Work** | `property` (exact), `title` (ipartial), `description` (ipartial), `author.uuid` (exact), `status` (exact), `type` (exact), `priority` (exact) | `createdAt`, `scheduledFor` | `createdAt`, `scheduledFor`, `priority`, `status` | — |
 
 ### Exemples
 

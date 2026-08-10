@@ -2,14 +2,12 @@
 
 namespace App\State;
 
-use ApiPlatform\Doctrine\Common\State\PersistProcessor;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\State\ProcessorInterface;
 use App\Entity\Note;
 use App\Entity\User;
 use Symfony\Bundle\SecurityBundle\Security;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * @implements ProcessorInterface<Note, Note>
@@ -17,8 +15,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 final readonly class NoteProcessor implements ProcessorInterface
 {
     public function __construct(
-        #[Autowire(service: PersistProcessor::class)]
-        private ProcessorInterface $persistProcessor,
+        // Chaîné sur PropertyScopeProcessor, qui délègue lui-même à
+        // PersistProcessor après avoir résolu et vérifié le logement.
+        private PropertyScopeProcessor $persistProcessor,
         private Security $security,
     ) {
     }

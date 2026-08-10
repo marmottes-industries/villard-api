@@ -106,10 +106,37 @@ Côté serveur :
 
 ### 2.4 Rôles
 
+**Rôles globaux :**
+
 - `ROLE_USER` : utilisateur connecté (par défaut pour tout user).
-- `ROLE_ADMIN` : suppressions sensibles + création/suppression d'utilisateurs.
+- `ROLE_ADMIN` : super-rôle — création/suppression d'utilisateurs, et **accès complet à tous les logements** (voir §2.5).
+
+**Rôles locaux, par logement** (portés par `PropertyMember`) :
+
+- `manager` (gestionnaire) : administre le logement, ses membres, et les ressources de tous les membres.
+- `occupant` : lecture complète du logement ; écriture sur ses propres séjours, notes et travaux, plus l'inventaire et les courses.
 
 Voir la matrice de permissions par ressource ci-dessous.
+
+### 2.5 Logements et cloisonnement — à lire avant de coder un client
+
+Toutes les données métier (`Occupation`, `Work`, `InventoryItem`, `ShoppingItem`, `Note`) appartiennent à un **logement** (`Property`). Le serveur cloisonne, le client n'a rien à sécuriser :
+
+| Situation | Comportement serveur |
+|-----------|----------------------|
+| `GET /api/notes` sans filtre | Renvoie **déjà** uniquement les notes des logements dont l'utilisateur est membre |
+| `GET /api/notes?property=<IRI autorisée>` | Restreint au logement demandé — c'est l'usage normal du sélecteur de logement |
+| `GET /api/notes?property=<IRI interdite>` | Collection **vide**, jamais les données de l'autre logement |
+| `GET /api/notes/{id}` d'un autre logement | `404` (pas `403` : l'existence n'est même pas confirmée) |
+| `POST` avec une `property` interdite | `400 Item not found` |
+| `POST` **sans** `property`, utilisateur mono-logement | `201` — le logement est appliqué automatiquement |
+| `POST` **sans** `property`, utilisateur multi-logements | `422` avec un message explicite |
+
+Le repli mono-logement existe pour que les builds mobiles antérieurs continuent de fonctionner. **Un client à jour doit toujours envoyer `property`** en création, et propager `?property=` en lecture.
+
+`Category` est **commune à tous les logements** : la même arborescence sert partout.
+
+`GET /api/me` renvoie les logements de l'utilisateur et son rôle local dans chacun : c'est tout ce qu'il faut pour amorcer un sélecteur de logement, sans second appel. Voir §7.
 
 ---
 
@@ -221,10 +248,12 @@ Relations exposées par défaut (JSON-LD) : `inventoryItems`, `shoppingItems` (I
 
 Inventaire de l'appartement. `category` est **obligatoire**.
 
-| Op                       | Sécurité     |
-|--------------------------|--------------|
-| GET / POST / PUT / PATCH | `ROLE_USER`  |
-| DELETE                   | `ROLE_ADMIN` |
+| Op                      | Sécurité                                       |
+|-------------------------|------------------------------------------------|
+| GET collection          | `ROLE_USER` — cloisonné par logement (cf. §2.5) |
+| GET item                | membre du logement                             |
+| POST / PUT / PATCH      | membre du logement                             |
+| DELETE                  | **gestionnaire** du logement                   |
 
 ```json
 {
@@ -234,7 +263,8 @@ Inventaire de l'appartement. `category` est **obligatoire**.
     "category": "/api/categories/1",
     "state": "ok",
     "note": "Une casserole a perdu son manche",
-    "location": "Placard sous l'évier"
+    "location": "Placard sous l'évier",
+    "property": "/api/properties/1"
 }
 ```
 
@@ -244,15 +274,18 @@ Champs :
 - `state` (enum, défaut `"ok"`) — valeurs possibles : `"ok"` (Bon état), `"worn"` (Abimé), `"replace"` (À remplacer).
 - `note` (string, optionnel) — précision libre sur l'item (jusqu'à 255 caractères).
 - `location` (string, optionnel) — emplacement physique dans le logement (255 caractères).
+- `property` (IRI Property, **requis**) — le logement. Auto-rempli en `POST` si l'utilisateur n'en a qu'un (cf. §2.5).
 
 ### 4.4 ShoppingItem — `/api/shopping_items`
 
 Liste de courses. `category` est **optionnelle**.
 
-| Op                       | Sécurité     |
-|--------------------------|--------------|
-| GET / POST / PUT / PATCH | `ROLE_USER`  |
-| DELETE                   | `ROLE_ADMIN` |
+| Op                      | Sécurité                                       |
+|-------------------------|------------------------------------------------|
+| GET collection          | `ROLE_USER` — cloisonné par logement (cf. §2.5) |
+| GET item                | membre du logement                             |
+| POST / PUT / PATCH      | membre du logement                             |
+| DELETE                  | **gestionnaire** du logement                   |
 
 ```json
 {
@@ -260,17 +293,20 @@ Liste de courses. `category` est **optionnelle**.
     "name": "Lait",
     "quantity": 2,
     "purchased": false,
-    "category": "/api/categories/1"
+    "category": "/api/categories/1",
+    "property": "/api/properties/1"
 }
 ```
 
 ### 4.5 Note — `/api/notes`
 
-| Op                      | Sécurité                                         |
-|-------------------------|--------------------------------------------------|
-| GET (collection / item) | `ROLE_USER`                                      |
-| POST                    | `ROLE_ADMIN` **ou** auteur = utilisateur courant |
-| PUT / PATCH / DELETE    | `ROLE_ADMIN` **ou** auteur de la note            |
+| Op                      | Sécurité                                                            |
+|-------------------------|---------------------------------------------------------------------|
+| GET collection          | `ROLE_USER` — cloisonné par logement (cf. §2.5)                      |
+| GET item                | membre du logement                                                   |
+| POST                    | membre du logement                                                   |
+| PUT / PATCH             | membre du logement **et** (gestionnaire **ou** auteur avant et après) |
+| DELETE                  | gestionnaire du logement **ou** auteur de la note                    |
 
 ```json
 {
@@ -278,23 +314,27 @@ Liste de courses. `category` est **optionnelle**.
     "title": "Code du portail",
     "content": "1234B",
     "createdAt": "2026-01-15T10:00:00+00:00",
-    "author": "/api/users/2"
+    "author": "/api/users/2",
+    "property": "/api/properties/1"
 }
 ```
 
-> En `POST`, `author` doit pointer sur l'utilisateur courant (sauf admin). **`createdAt` est auto-rempli côté serveur**
-> (timestamp UTC à l'instant de la création) et lecture seule — toute valeur envoyée par le client est ignorée, y
-> compris en `PUT`/`PATCH`.
+> En `POST`, `author` peut être **omis** : le serveur l'assigne à l'utilisateur courant. S'il est fourni, il doit
+> pointer sur l'utilisateur courant (sauf gestionnaire du logement ou admin). **`createdAt` est auto-rempli côté
+> serveur** (timestamp UTC à l'instant de la création) et lecture seule — toute valeur envoyée par le client est
+> ignorée, y compris en `PUT`/`PATCH`. `property` est **requis**, avec repli mono-logement (cf. §2.5).
 
 ### 4.6 Occupation — `/api/occupations`
 
 Calendrier d'occupation de l'appartement.
 
-| Op                      | Sécurité                                             |
-|-------------------------|------------------------------------------------------|
-| GET (collection / item) | `ROLE_USER`                                          |
-| POST                    | `ROLE_ADMIN` **ou** `occupant` = utilisateur courant |
-| PUT / PATCH / DELETE    | `ROLE_ADMIN` **ou** occupant de la période           |
+| Op                      | Sécurité                                                              |
+|-------------------------|-----------------------------------------------------------------------|
+| GET collection          | `ROLE_USER` — cloisonné par logement (cf. §2.5)                        |
+| GET item                | membre du logement                                                     |
+| POST                    | membre du logement **et** (gestionnaire **ou** `occupant` = user)      |
+| PUT / PATCH             | membre du logement **et** (gestionnaire **ou** occupant avant et après) |
+| DELETE                  | gestionnaire du logement **ou** occupant de la période                 |
 
 ```json
 {
@@ -303,6 +343,7 @@ Calendrier d'occupation de l'appartement.
     "endDate": "2026-07-15",
     "notes": "Vacances d'été",
     "occupant": "/api/users/2",
+    "property": "/api/properties/1",
     "endNotifiedAt": null
 }
 ```
@@ -318,12 +359,13 @@ Dates au format ISO 8601 (`YYYY-MM-DD` accepté pour les `date_immutable`).
 Travaux à réaliser dans l'appartement (bricolage à faire soi-même ou prestation externe). Suivi du cycle de vie via `status`,
 priorisation et chiffrage estimé / réel.
 
-| Op                      | Sécurité                                          |
-|-------------------------|---------------------------------------------------|
-| GET (collection / item) | `ROLE_USER`                                       |
-| POST                    | `ROLE_ADMIN` **ou** auteur = utilisateur courant  |
-| PUT / PATCH             | `ROLE_ADMIN` **ou** auteur (avant **et** après) = user courant |
-| DELETE                  | `ROLE_ADMIN` **ou** auteur = utilisateur courant  |
+| Op                      | Sécurité                                                            |
+|-------------------------|---------------------------------------------------------------------|
+| GET collection          | `ROLE_USER` — cloisonné par logement (cf. §2.5)                      |
+| GET item                | membre du logement                                                   |
+| POST                    | membre du logement                                                   |
+| PUT / PATCH             | membre du logement **et** (gestionnaire **ou** auteur avant et après) |
+| DELETE                  | gestionnaire du logement **ou** auteur des travaux                   |
 
 ```json
 {
@@ -334,6 +376,7 @@ priorisation et chiffrage estimé / réel.
     "type": "diy",
     "priority": "medium",
     "author": "/api/users/2",
+    "property": "/api/properties/1",
     "createdAt": "2026-06-09T09:30:00+00:00",
     "scheduledFor": "2026-07-12",
     "completedAt": null,
@@ -350,6 +393,7 @@ Champs :
 - `type` (enum, optionnel) : `"diy"` (à faire soi-même) ou `"pro"` (à faire faire).
 - `priority` (enum, optionnel) : `"low"`, `"medium"`, `"high"`.
 - `author` (IRI User, **requis**) — auto-rempli avec l'utilisateur courant en `POST` si omis.
+- `property` (IRI Property, **requis**) — le logement. Auto-rempli en `POST` si l'utilisateur n'en a qu'un (cf. §2.5).
 - `createdAt` (datetime, ISO 8601) — **auto-rempli côté serveur à la création**, lecture seule.
 - `scheduledFor` (date, `YYYY-MM-DD`, optionnel) — date prévue.
 - `completedAt` (datetime, optionnel) — **auto-rempli côté serveur dès que `status` passe à `"done"`** si non fourni
@@ -409,6 +453,78 @@ Champs :
 > courant et `lastSeenAt` mis à `now()`. Le client peut donc `POST` le même token sans gérer l'existant lui-même.
 > Pour désinscrire un appareil (logout, désactivation des notifs) : `DELETE /api/device_tokens/{id}`. La suppression
 > d'un utilisateur supprime ses device tokens en cascade.
+
+### 4.9 Property — `/api/properties`
+
+Un logement. Porte aussi ses coordonnées météo (cf. §12).
+
+| Op             | Sécurité                                        |
+|----------------|-------------------------------------------------|
+| GET collection | `ROLE_USER` — ne renvoie que ses propres logements |
+| GET item       | membre du logement                              |
+| POST           | `ROLE_ADMIN`                                    |
+| PATCH          | **gestionnaire** du logement                    |
+| DELETE         | `ROLE_ADMIN`                                    |
+
+Pas de `PUT`.
+
+```json
+{
+    "id": 1,
+    "name": "Les Marmottes",
+    "slug": "les-marmottes",
+    "city": "Villard-de-Lans",
+    "address": "12 rue des Clarines",
+    "latitude": 45.064757765580204,
+    "longitude": 5.548400944891808,
+    "timezone": "Europe/Paris",
+    "secondaryLocationName": "Côte 2000",
+    "secondaryLatitude": 45.0186219050606,
+    "secondaryLongitude": 5.571823469177524,
+    "archived": false
+}
+```
+
+Champs :
+
+- `name` (string, **requis**, 255) — nom affiché.
+- `slug` (string, **requis**, **unique**) — minuscules, chiffres et tirets uniquement (`^[a-z0-9]+(-[a-z0-9]+)*$`).
+- `city` (string, **requis**, 255).
+- `address` (string, optionnel, 255).
+- `latitude` / `longitude` (float, **requis**) — point météo principal, le logement lui-même.
+- `timezone` (string, défaut `"Europe/Paris"`) — identifiant de fuseau valide.
+- `secondaryLocationName` / `secondaryLatitude` / `secondaryLongitude` (optionnels) — point météo secondaire, typiquement
+  un domaine d'altitude. **Les trois vont ensemble** : le point n'est exploité que s'ils sont tous les trois renseignés.
+- `archived` (bool, défaut `false`) — un logement archivé reste lisible ; au client de le masquer du sélecteur.
+
+> ⚠️ Supprimer un logement qui porte encore des données échoue sur la contrainte de clé étrangère. Archiver, ou vider
+> le logement d'abord.
+
+### 4.10 PropertyMember — `/api/property_members`
+
+Appartenance d'un utilisateur à un logement, avec son rôle local. C'est **la** source de vérité du cloisonnement.
+
+| Op             | Sécurité                                                     |
+|----------------|--------------------------------------------------------------|
+| GET collection | `ROLE_USER` — appartenances de ses propres logements uniquement |
+| GET item       | membre du logement                                           |
+| POST           | **gestionnaire** du logement visé                            |
+| PATCH          | **gestionnaire** du logement (avant **et** après)            |
+| DELETE         | **gestionnaire** du logement                                 |
+
+Pas de `PUT`.
+
+```json
+{
+    "id": 8,
+    "property": "/api/properties/1",
+    "user": "/api/users/2",
+    "role": "manager"
+}
+```
+
+- `role` (enum, défaut `"occupant"`) : `"manager"` ou `"occupant"`.
+- Contrainte d'unicité sur `(property, user)` : un utilisateur n'a qu'un rôle par logement. Un doublon renvoie `422`.
 
 ---
 
@@ -482,10 +598,27 @@ await api('/occupations', {
         startDate: '2026-07-01',
         endDate: '2026-07-15',
         notes: 'Vacances',
-        occupant: '/api/users/2', // IRI du user connecté
+        occupant: '/api/users/2',      // IRI du user connecté
+        property: '/api/properties/1', // logement actif — cf. §2.5
     }),
 })
 ```
+
+### 5.6 Lister les données du logement actif
+
+```ts
+// L'IRI vient du store de logement actif, amorcé depuis /api/me (§7).
+const q = new URLSearchParams({ property: activePropertyIri })
+
+const [notes, items, works] = await Promise.all([
+    api(`/notes?${q}`),
+    api(`/inventory_items?${q}`),
+    api(`/works?${q}`),
+])
+```
+
+Omettre `property` ne fuite rien — le serveur renvoie alors les données de **tous** les logements de l'utilisateur,
+ce qui n'est simplement pas ce qu'affiche un écran dédié à un logement.
 
 ---
 
@@ -502,20 +635,85 @@ await api('/occupations', {
    ouvrir une issue plutôt que de bidouiller. L'API doit rester consommable par d'autres clients (mobile à venir).
 6. La pluralisation des URLs suit la convention API Platform : `Category → categories`,
    `InventoryItem → inventory_items`, `ShoppingItem → shopping_items`, `Note → notes`, `Occupation → occupations`,
-   `Work → works`, `User → users`, `DeviceToken → device_tokens`.
+   `Work → works`, `User → users`, `DeviceToken → device_tokens`, `Property → properties`,
+   `PropertyMember → property_members`.
+7. **Propager le logement actif** : `?property=<IRI>` sur toutes les lectures métier, champ `property` sur toutes les
+   créations. Le serveur cloisonne de toute façon (§2.5), mais sans le paramètre un écran affiche les données de tous
+   les logements mélangées.
+8. **Recharger sur bascule de logement**, pas seulement au montage : planning, inventaire, courses, notes, travaux et
+   météo dépendent tous du logement actif.
 
 ---
 
 ## 7. Endpoint `/api/me`
 
-`GET /api/me` (sécurité `ROLE_USER`) retourne le profil de l'utilisateur courant, sérialisé avec le groupe `user:read`.
-L'IRI renvoyé pointe vers `/api/users/{id}`. Pas besoin de décoder le JWT côté front pour connaître l'identité du user
-connecté.
+`GET /api/me` (sécurité `ROLE_USER`) retourne le profil de l'utilisateur courant, sérialisé avec les groupes `user:read`
+et `property:summary`. L'IRI renvoyé pointe vers `/api/users/{id}`. Pas besoin de décoder le JWT côté front pour
+connaître l'identité du user connecté.
+
+`memberships` porte les logements de l'utilisateur **embarqués** (pas de simples IRIs) avec son rôle local dans chacun :
+c'est la seule requête nécessaire pour amorcer un sélecteur de logement au démarrage.
+
+```json
+{
+    "@id": "/api/users/2",
+    "id": 2,
+    "uuid": "80d900ea-28d8-4b3e-9342-f23611ed3fe6",
+    "username": "antonin",
+    "email": "antonin@example.com",
+    "roles": ["ROLE_USER"],
+    "memberships": [
+        {
+            "@id": "/api/property_members/8",
+            "role": "manager",
+            "property": {
+                "@id": "/api/properties/1",
+                "id": 1,
+                "name": "Les Marmottes",
+                "slug": "les-marmottes",
+                "city": "Villard-de-Lans",
+                "latitude": 45.064757765580204,
+                "longitude": 5.548400944891808,
+                "timezone": "Europe/Paris",
+                "archived": false
+            }
+        }
+    ]
+}
+```
 
 ```ts
-const me = await api<User>('/me')
-// → { id: 2, uuid: "...", username: "antonin", roles: ["ROLE_USER"] }
+type PropertySummary = {
+    '@id': string
+    id: number
+    name: string
+    slug: string
+    city: string
+    latitude: number
+    longitude: number
+    timezone: string
+    archived: boolean
+}
+
+type Me = {
+    '@id': string
+    id: number
+    uuid: string
+    username: string
+    email: string | null
+    roles: string[]
+    memberships: { role: 'manager' | 'occupant'; property: PropertySummary }[]
+}
+
+const me = await api<Me>('/me')
+const activeProperty = me.memberships[0]?.property['@id'] // → '/api/properties/1'
 ```
+
+Cas limites à gérer côté client :
+
+- `memberships` **vide** : l'utilisateur n'a aucun logement. Afficher un état vide explicite, ne lancer aucun appel métier.
+- **Un seul** logement : ne pas afficher de sélecteur encombrant, le nom du logement suffit.
+- Logement actif mémorisé localement mais **absent** de `memberships` (retiré ou archivé) : replier sur le premier disponible.
 
 Implémenté via `App\State\MeProvider` (cf. `src/State/MeProvider.php`). Si l'utilisateur n'est pas authentifié → `401`.
 
@@ -601,11 +799,13 @@ paramètres se combinent en AND.
 | Ressource       | Search                                                                                           | Date                   | Order                       | Booléen     |
 |-----------------|--------------------------------------------------------------------------------------------------|------------------------|-----------------------------|-------------|
 | `Category`      | `name` (ipartial)                                                                                | —                      | `name`                      | —           |
-| `InventoryItem` | `name` (ipartial), `category` (exact), `state` (exact), `note` (ipartial), `location` (ipartial) | —                      | `name`, `quantity`, `state` | —           |
-| `ShoppingItem`  | `name` (ipartial), `category` (exact)                                                            | —                      | `name`, `purchased`         | `purchased` |
-| `Note`          | `title` (ipartial), `content` (ipartial), `author` (exact), `author.uuid` (exact)                | `createdAt`            | `createdAt`, `title`        | —           |
-| `Occupation`    | `occupant` (exact), `occupant.uuid` (exact), `notes` (ipartial)                                  | `startDate`, `endDate` | `startDate`, `endDate`      | —           |
-| `Work`          | `title` (ipartial), `description` (ipartial), `author.uuid` (exact), `status` (exact), `type` (exact), `priority` (exact) | `createdAt`, `scheduledFor` | `createdAt`, `scheduledFor`, `priority`, `status` | —           |
+| `Property`      | `name` (ipartial), `slug` (exact), `city` (ipartial)                                             | —                      | `name`, `city`              | `archived`  |
+| `PropertyMember`| `property` (exact), `user` (exact), `user.uuid` (exact), `role` (exact)                          | —                      | —                           | —           |
+| `InventoryItem` | `property` (exact), `name` (ipartial), `category` (exact), `state` (exact), `note` (ipartial), `location` (ipartial) | —                      | `name`, `quantity`, `state` | —           |
+| `ShoppingItem`  | `property` (exact), `name` (ipartial), `category` (exact)                                                            | —                      | `name`, `purchased`         | `purchased` |
+| `Note`          | `property` (exact), `title` (ipartial), `content` (ipartial), `author` (exact), `author.uuid` (exact)                | `createdAt`            | `createdAt`, `title`        | —           |
+| `Occupation`    | `property` (exact), `occupant` (exact), `occupant.uuid` (exact), `notes` (ipartial)                                  | `startDate`, `endDate` | `startDate`, `endDate`      | —           |
+| `Work`          | `property` (exact), `title` (ipartial), `description` (ipartial), `author.uuid` (exact), `status` (exact), `type` (exact), `priority` (exact) | `createdAt`, `scheduledFor` | `createdAt`, `scheduledFor`, `priority`, `status` | —           |
 
 ### Exemples
 
