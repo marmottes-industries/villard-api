@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Contract\PropertyScopedInterface;
 use App\Repository\ShoppingItemRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -28,13 +29,14 @@ use Symfony\Component\Validator\Constraints as Assert;
     ]
 )]
 #[ApiFilter(SearchFilter::class, properties: [
+    'property' => 'exact',
     'name' => 'ipartial',
     'category' => 'exact',
 ])]
 #[ApiFilter(BooleanFilter::class, properties: ['purchased'])]
 #[ApiFilter(OrderFilter::class, properties: ['name', 'purchased'], arguments: ['orderParameterName' => 'order'])]
 #[ORM\Entity(repositoryClass: ShoppingItemRepository::class)]
-class ShoppingItem
+class ShoppingItem implements PropertyScopedInterface
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -56,9 +58,30 @@ class ShoppingItem
     #[ORM\ManyToOne(inversedBy: 'shoppingItems')]
     private ?Category $category = null;
 
+    /**
+     * Volontairement sans `Assert\NotNull` : au `POST`, le repli mono-logement
+     * de {@see \App\State\PropertyScopeProcessor} renseigne le champ quand le
+     * client l'omet, et la validation passerait avant lui.
+     */
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(nullable: false)]
+    private ?Property $property = null;
+
     public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function getProperty(): ?Property
+    {
+        return $this->property;
+    }
+
+    public function setProperty(?Property $property): static
+    {
+        $this->property = $property;
+
+        return $this;
     }
 
     public function getName(): ?string

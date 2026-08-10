@@ -14,6 +14,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Contract\PropertyScopedInterface;
 use App\Repository\NoteRepository;
 use App\State\NoteProcessor;
 use Doctrine\DBAL\Types\Types;
@@ -34,6 +35,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     ]
 )]
 #[ApiFilter(SearchFilter::class, properties: [
+    'property' => 'exact',
     'title' => 'ipartial',
     'content' => 'ipartial',
     'author' => 'exact',
@@ -42,7 +44,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(DateFilter::class, properties: ['createdAt'])]
 #[ApiFilter(OrderFilter::class, properties: ['createdAt', 'title'], arguments: ['orderParameterName' => 'order'])]
 #[ORM\Entity(repositoryClass: NoteRepository::class)]
-class Note
+class Note implements PropertyScopedInterface
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -66,9 +68,30 @@ class Note
     #[ORM\JoinColumn(nullable: false)]
     private ?User $author = null;
 
+    /**
+     * Volontairement sans `Assert\NotNull` : au `POST`, le repli mono-logement
+     * de {@see \App\State\PropertyScopeProcessor} renseigne le champ quand le
+     * client l'omet, et la validation passerait avant lui.
+     */
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(nullable: false)]
+    private ?Property $property = null;
+
     public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function getProperty(): ?Property
+    {
+        return $this->property;
+    }
+
+    public function setProperty(?Property $property): static
+    {
+        $this->property = $property;
+
+        return $this;
     }
 
     public function getTitle(): ?string

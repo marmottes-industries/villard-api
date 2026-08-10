@@ -12,6 +12,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Contract\PropertyScopedInterface;
 use App\Enum\State;
 use App\Repository\InventoryItemRepository;
 use Doctrine\ORM\Mapping as ORM;
@@ -28,6 +29,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     ]
 )]
 #[ApiFilter(SearchFilter::class, properties: [
+    'property' => 'exact',
     'name' => 'ipartial',
     'category' => 'exact',
     'state' => 'exact',
@@ -36,7 +38,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 ])]
 #[ApiFilter(OrderFilter::class, properties: ['name', 'quantity', 'state'], arguments: ['orderParameterName' => 'order'])]
 #[ORM\Entity(repositoryClass: InventoryItemRepository::class)]
-class InventoryItem
+class InventoryItem implements PropertyScopedInterface
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -65,9 +67,30 @@ class InventoryItem
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $location = null;
 
+    /**
+     * Volontairement sans `Assert\NotNull` : au `POST`, le repli mono-logement
+     * de {@see \App\State\PropertyScopeProcessor} renseigne le champ quand le
+     * client l'omet, et la validation passerait avant lui.
+     */
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(nullable: false)]
+    private ?Property $property = null;
+
     public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function getProperty(): ?Property
+    {
+        return $this->property;
+    }
+
+    public function setProperty(?Property $property): static
+    {
+        $this->property = $property;
+
+        return $this;
     }
 
     public function getName(): ?string
