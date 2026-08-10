@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
+#
 # Scénarios de cloisonnement multi-logements (cf. PLAN-MULTI-LOGEMENTS.md § Testing).
+#
+#   php bin/console doctrine:fixtures:load --no-interaction
+#   bash bin/check-property-scope.sh
+#
+# Le script ÉCRIT en base : il crée des notes et des articles d'inventaire qu'il
+# ne supprime pas. Recharger les fixtures avant chaque exécution.
+#
+# Il retire en revanche l'appartenance qu'il crée, pour que `sophie` reste
+# mono-logement : c'est le seul compte des fixtures qui permette de tester le
+# repli mono-logement et le sélecteur masqué, et le laisser à deux logements
+# fausse silencieusement tout ce qui tourne ensuite.
+#
 set -uo pipefail
 API=https://127.0.0.1:8000
 
@@ -26,6 +39,11 @@ count() { get "$1" "$2" | python3 -c 'import sys,json; print(json.load(sys.stdin
 post() {
   curl -sk -o /dev/null -w '%{http_code}' -X POST "$API$2" -H "Authorization: Bearer $1" \
     -H 'Content-Type: application/ld+json' -d "$3"
+}
+post_iri() {
+  curl -sk -X POST "$API$2" -H "Authorization: Bearer $1" \
+    -H 'Content-Type: application/ld+json' -d "$3" \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("@id",""))'
 }
 
 MARMOTTES=$(get "$ANTONIN" /api/properties | python3 -c '
@@ -105,10 +123,17 @@ SOPHIE_IRI=$(get "$SOPHIE" /api/me | python3 -c 'import sys,json; print(json.loa
 BODY='{"property":"'$CABANON'","user":"'$SOPHIE_IRI'","role":"occupant"}'
 R=$(post "$ANTONIN" /api/property_members "$BODY")
 check "POST membre du Cabanon (occupant)"     403 "$R"
-R=$(post "$MARIE" /api/property_members "$BODY")
-check "POST membre du Cabanon (gestionnaire)" 201 "$R"
+NEW_MEMBER=$(post_iri "$MARIE" /api/property_members "$BODY")
+check "POST membre du Cabanon (gestionnaire)" "/api/property_members" "$(dirname "$NEW_MEMBER")"
+memberships() { get "$1" /api/me | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["memberships"]))'; }
 # sophie voit désormais les deux logements dans son sélecteur.
-check "GET /api/me après ajout (sophie)"        2 "$(get "$SOPHIE" /api/me | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["memberships"]))')"
+check "GET /api/me après ajout (sophie)"        2 "$(memberships "$SOPHIE")"
+
+# Nettoyage : sophie doit redevenir mono-logement, sinon le scénario
+# mono-logement des fixtures est faussé pour tout ce qui tourne ensuite —
+# y compris un développeur qui teste le sélecteur à la main.
+check "DELETE membre (gestionnaire)"          204 "$(del "$MARIE" "$NEW_MEMBER")"
+check "GET /api/me après retrait (sophie)"      1 "$(memberships "$SOPHIE")"
 
 echo
 echo "— ROLE_ADMIN traverse tous les logements —"
