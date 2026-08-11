@@ -12,22 +12,33 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Contract\PropertyScopedInterface;
 use App\Enum\State;
 use App\Repository\InventoryItemRepository;
+use App\State\PropertyScopeProcessor;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+/**
+ * Cf. {@see Occupation} pour la logique des expressions de sécurité. La
+ * suppression, jadis réservée à `ROLE_ADMIN`, passe au gestionnaire local du
+ * logement — `ROLE_ADMIN` la conserve via le bypass du voter.
+ */
 #[ApiResource(
     operations: [
         new GetCollection(security: "is_granted('ROLE_USER')"),
-        new Get(security: "is_granted('ROLE_USER')"),
-        new Post(security: "is_granted('ROLE_USER')"),
-        new Put(security: "is_granted('ROLE_USER')"),
-        new Patch(security: "is_granted('ROLE_USER')"),
-        new Delete(security: "is_granted('ROLE_ADMIN')"),
+        new Get(security: "is_granted('PROPERTY_VIEW', object.getProperty())"),
+        new Post(
+            securityPostDenormalize: "object.getProperty() == null or is_granted('PROPERTY_CONTRIBUTE', object.getProperty())",
+            processor: PropertyScopeProcessor::class,
+        ),
+        new Put(securityPostDenormalize: "is_granted('PROPERTY_CONTRIBUTE', object.getProperty()) and is_granted('PROPERTY_CONTRIBUTE', previous_object.getProperty())"),
+        new Patch(securityPostDenormalize: "is_granted('PROPERTY_CONTRIBUTE', object.getProperty()) and is_granted('PROPERTY_CONTRIBUTE', previous_object.getProperty())"),
+        new Delete(security: "is_granted('PROPERTY_MANAGE', object.getProperty())"),
     ]
 )]
 #[ApiFilter(SearchFilter::class, properties: [
+    'property' => 'exact',
     'name' => 'ipartial',
     'category' => 'exact',
     'state' => 'exact',
@@ -36,7 +47,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 ])]
 #[ApiFilter(OrderFilter::class, properties: ['name', 'quantity', 'state'], arguments: ['orderParameterName' => 'order'])]
 #[ORM\Entity(repositoryClass: InventoryItemRepository::class)]
-class InventoryItem
+class InventoryItem implements PropertyScopedInterface
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -65,9 +76,30 @@ class InventoryItem
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $location = null;
 
+    /**
+     * Volontairement sans `Assert\NotNull` : au `POST`, le repli mono-logement
+     * de {@see \App\State\PropertyScopeProcessor} renseigne le champ quand le
+     * client l'omet, et la validation passerait avant lui.
+     */
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(nullable: false)]
+    private ?Property $property = null;
+
     public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function getProperty(): ?Property
+    {
+        return $this->property;
+    }
+
+    public function setProperty(?Property $property): static
+    {
+        $this->property = $property;
+
+        return $this;
     }
 
     public function getName(): ?string

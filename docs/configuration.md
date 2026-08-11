@@ -78,6 +78,23 @@ Génération des clés : voir [`authentication.md`](authentication.md#générati
 
 `compose.override.yaml` (dev uniquement) expose `3306:3306` et ajoute un service Mailpit (interface web sur `:8025`).
 
+## Météo — plus de variables d'environnement
+
+Les variables `WEATHER_LATITUDE`, `WEATHER_LONGITUDE`, `WEATHER_TIMEZONE`, `WEATHER_COTE2000_LATITUDE` et
+`WEATHER_COTE2000_LONGITUDE`, ainsi que les paramètres `app.weather.*` de `config/services.yaml`, **ont été supprimés**
+lors du passage au multi-logements.
+
+Chaque `Property` porte désormais ses propres `latitude`, `longitude`, `timezone` et son point secondaire optionnel
+(`secondaryLocationName` / `secondaryLatitude` / `secondaryLongitude`). Ils sont modifiables depuis l'écran
+d'administration des logements, sans redéploiement. Les valeurs historiques de Villard-de-Lans et de la Côte 2000 ne
+subsistent que comme seed dans `src/DataFixtures/AppFixtures.php` et dans la migration de reprise.
+
+Le cache Open-Meteo est clé par logement (`weather_property_{id}`, TTL 30 min). Pour le purger :
+
+```bash
+php bin/console cache:pool:delete cache.app weather_property_1
+```
+
 ## Fichiers de configuration clés
 
 | Fichier | Rôle |

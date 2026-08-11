@@ -31,7 +31,10 @@ use Symfony\Component\Validator\Constraints as Assert;
         new Get(
             uriTemplate: '/me',
             normalizationContext: [
-                'groups' => ['user:read'],
+                // `property:summary` embarque le logement dans chaque
+                // appartenance plutôt qu'une IRI, pour amorcer le sélecteur
+                // de logement du client en un seul appel.
+                'groups' => ['user:read', 'property:summary'],
                 'item_uri_template' => '/users/{id}',
             ],
             security: "is_granted('ROLE_USER')",
@@ -102,12 +105,25 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\OneToMany(targetEntity: DeviceToken::class, mappedBy: 'owner', cascade: ['remove'])]
     private Collection $deviceTokens;
 
+    /**
+     * Appartenances aux logements. Sérialisées dans `user:read` pour que
+     * `GET /api/me` amorce le sélecteur de logement du client sans second
+     * appel — l'opération `me` active en plus le groupe `property:summary`,
+     * qui embarque le logement au lieu d'une simple IRI.
+     *
+     * @var Collection<int, PropertyMember>
+     */
+    #[ORM\OneToMany(targetEntity: PropertyMember::class, mappedBy: 'user', cascade: ['persist', 'remove'])]
+    #[Groups(['user:read'])]
+    private Collection $memberships;
+
     public function __construct()
     {
         $this->uuid = Uuid::v4();
         $this->occupations = new ArrayCollection();
         $this->notes = new ArrayCollection();
         $this->deviceTokens = new ArrayCollection();
+        $this->memberships = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -275,6 +291,35 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         if ($this->deviceTokens->removeElement($deviceToken)) {
             if ($deviceToken->getOwner() === $this) {
                 $deviceToken->setOwner(null);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, PropertyMember>
+     */
+    public function getMemberships(): Collection
+    {
+        return $this->memberships;
+    }
+
+    public function addMembership(PropertyMember $membership): static
+    {
+        if (!$this->memberships->contains($membership)) {
+            $this->memberships->add($membership);
+            $membership->setUser($this);
+        }
+
+        return $this;
+    }
+
+    public function removeMembership(PropertyMember $membership): static
+    {
+        if ($this->memberships->removeElement($membership)) {
+            if ($membership->getUser() === $this) {
+                $membership->setUser(null);
             }
         }
 

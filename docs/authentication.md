@@ -189,7 +189,7 @@ Endpoint custom défini sur l'entité `User` (`src/Entity/User.php`) :
 ```php
 new Get(
     uriTemplate: '/me',
-    normalizationContext: ['groups' => ['user:read'], 'item_uri_template' => '/users/{id}'],
+    normalizationContext: ['groups' => ['user:read', 'property:summary'], 'item_uri_template' => '/users/{id}'],
     security: "is_granted('ROLE_USER')",
     name: 'me',
     provider: MeProvider::class,
@@ -200,7 +200,9 @@ new Get(
 
 C'est la manière propre d'exposer « moi » sans dévoiler d'ID dans l'URL et sans dupliquer la logique côté client.
 
-## Rôles
+Le groupe `property:summary`, activé en plus de `user:read`, embarque les logements de l'utilisateur dans `memberships` avec son rôle local dans chacun. Un client amorce ainsi son sélecteur de logement sans second appel. Exemple de réponse dans [`resources.md`](resources.md#get-apime).
+
+## Rôles globaux
 
 | Rôle | Attribué à | Octroyé par |
 |------|-----------|-------------|
@@ -209,7 +211,34 @@ C'est la manière propre d'exposer « moi » sans dévoiler d'ID dans l'URL et s
 
 `User::getRoles()` ajoute automatiquement `ROLE_USER` à chaque utilisateur. La hiérarchie n'est pas configurée explicitement, donc `ROLE_ADMIN` **n'implique pas** `ROLE_USER` au niveau du `RoleHierarchy` — c'est `getRoles()` qui garantit la présence de `ROLE_USER` pour tous.
 
-La matrice des permissions par opération est documentée dans [`resources.md`](resources.md).
+## Rôles locaux et `PropertyVoter`
+
+Depuis le multi-logements, l'autorisation se joue à deux niveaux : les rôles Symfony globaux ci-dessus, et un **rôle local par logement** porté par `PropertyMember`.
+
+| Rôle local | Valeur | Capacités dans le logement |
+|------------|--------|-----------------------------|
+| Gestionnaire | `manager` | Tout : modifier le logement, gérer ses membres, écrire et supprimer les ressources de tous les membres |
+| Occupant | `occupant` | Lecture complète ; écriture sur ses propres séjours, notes et travaux ; inventaire et courses |
+
+`App\Security\Voter\PropertyVoter` traduit ces rôles en trois attributs, tous évalués sur une instance de `Property` :
+
+| Attribut | Accordé à |
+|----------|-----------|
+| `PROPERTY_VIEW` | tout membre du logement |
+| `PROPERTY_CONTRIBUTE` | tout membre du logement |
+| `PROPERTY_MANAGE` | membre de rôle `manager` uniquement |
+
+`VIEW` et `CONTRIBUTE` sont aujourd'hui équivalents ; ils sont distingués pour pouvoir un jour introduire un rôle en lecture seule sans retoucher les expressions de sécurité des entités.
+
+### `ROLE_ADMIN` traverse tous les logements
+
+**À connaître avant d'attribuer ce rôle** : `ROLE_ADMIN` est un bypass global. Il court-circuite le voter (les trois attributs sont accordés, sur n'importe quel logement, même sans appartenance) **et** `PropertyScopeExtension` (aucun filtre n'est ajouté aux requêtes). Un administrateur voit et modifie donc l'intégralité des logements, y compris ceux dont il n'est membre d'aucun.
+
+C'est un choix assumé : il préserve les capacités d'administration antérieures au multi-logements. Pour une administration cloisonnée, utiliser le rôle local `manager` plutôt que `ROLE_ADMIN`.
+
+Une exception notable : un `ROLE_ADMIN` sans aucune appartenance ne bénéficie pas du repli mono-logement au `POST` — aucun logement ne peut être déduit, le champ `property` devient obligatoire (422 sinon).
+
+La matrice des permissions par opération est documentée dans [`resources.md`](resources.md#matrice-des-opérations).
 
 ## Création d'un utilisateur
 
@@ -229,3 +258,5 @@ Côté API : `POST /api/users` est ouvert uniquement à `ROLE_ADMIN`. **Attentio
 - **Toujours en HTTPS en production**. Le JWT transite dans l'en-tête `Authorization` ; en clair sur le réseau il est rejouable.
 - **Pas de stockage du JWT dans un cookie sans flags** : côté front, `localStorage` reste l'option la plus simple, à condition d'avoir un CSP strict (XSS = vol de token).
 - **Rotation de la clé privée** : prévoir la procédure (invalide tous les tokens en cours — c'est par construction).
+- **Le cloisonnement par logement n'est jamais délégué au client** : un `?property=` forgé ne peut rien élargir, l'extension Doctrine s'appliquant en amont de tout filtre. Ne jamais réintroduire de requête métier qui contourne API Platform sans rejouer le filtre d'appartenance.
+- **`ROLE_ADMIN` est un accès total à tous les logements**, cf. plus haut. À n'attribuer qu'aux comptes qui en ont réellement besoin.

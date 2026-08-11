@@ -43,6 +43,13 @@ php bin/console cache:clear
 
 No test suite is wired yet (no `phpunit` in composer.json, no `tests/` directory). The `App\Tests\` PSR-4 autoload prefix is declared in `composer.json` but unused.
 
+Property partitioning is instead validated by an HTTP scenario script. It **mutates the database** — reload fixtures first:
+
+```bash
+php bin/console doctrine:fixtures:load --no-interaction
+bash bin/check-property-scope.sh          # needs symfony server:start on :8000
+```
+
 ## Architecture
 
 ### Stateless, multi-client by design
@@ -71,24 +78,46 @@ Every entity in `src/Entity/` carrying `#[ApiResource]` exposes CRUD under `/api
 
 ### Serialization groups — partially applied
 
-Only `User` uses serialization groups (`user:read` / `user:write`) — its `password` field is in no group and therefore not exposable. **Other entities (Category, InventoryItem, ShoppingItem, Note, Occupation) currently expose all scalar fields by default.** When adding fields to those entities, assume they will be exposed; when adding sensitive fields, introduce groups first.
+`User` (`user:read` / `user:write`), `Property` (`property:read` / `property:write`) and `PropertyMember` (`member:read` / `member:write`) use serialization groups — `User.password` is in no group and therefore not exposable. **Other entities (Category, InventoryItem, ShoppingItem, Note, Occupation, Work) currently expose all scalar fields by default.** When adding fields to those entities, assume they will be exposed; when adding sensitive fields, introduce groups first.
+
+`property:summary` is a cross-cutting group: it is activated *in addition to* `user:read` on the `/api/me` operation so that `memberships` embeds each property instead of an IRI.
+
+### Property scoping — read this before touching any business resource
+
+Every business resource is partitioned by property (logement). Two mechanisms, both mandatory:
+
+- `src/Doctrine/PropertyScopeExtension.php` — a Doctrine ORM query extension registered on **both** the collection and item tags. It appends the membership clause to every query for any resource implementing `App\Contract\PropertyScopedInterface`, plus `Property` and `PropertyMember`. The collection extension alone would leave `GET /api/notes/42` open to anyone.
+- `src/Security/Voter/PropertyVoter.php` — `PROPERTY_VIEW` / `PROPERTY_CONTRIBUTE` / `PROPERTY_MANAGE`, resolved from `PropertyMemberRepository`.
+
+**Adding a new business resource? Implement `PropertyScopedInterface` and the scoping comes for free.** Don't hand-roll a filter.
+
+`ROLE_ADMIN` bypasses both — it is a global super-role that traverses every property.
+
+**Pipeline ordering gotcha**: `securityPostDenormalize` and validation run **before** processors. A field a processor fills therefore cannot be required by a validation constraint nor tested by a security expression. That's why `property` carries no `Assert\NotNull`, and why the `POST` expressions explicitly tolerate a null property — `src/State/PropertyScopeProcessor.php` then either applies the single-property fallback or throws a 422. The same ordering had silently broken `POST /api/notes` and `POST /api/works` for non-admins, since both clients omit `author`.
+
+Processor chain on `Note` and `Work`: `NoteProcessor` / `WorkProcessor` → `PropertyScopeProcessor` → `PersistProcessor`.
 
 ### `GET /api/me`
 
 Implemented via a custom API Platform state provider: `src/State/MeProvider.php`. The route is declared as an operation on the `User` resource and resolves to the currently authenticated user. This is the pattern to follow for other "current-user-scoped" endpoints — don't add a controller.
 
+It serializes with `['user:read', 'property:summary']` so a client can seed its property switcher in one call.
+
 ### Source layout
 
 ```
 src/
-├── ApiResource/   # (empty) — for resources decoupled from Doctrine entities, if needed
+├── ApiResource/   # resources decoupled from Doctrine entities (WeatherForecast)
 ├── Command/       # console commands (e.g. CreateUserCommand → app:create-user)
-├── Controller/    # (empty) — API Platform generates everything; avoid adding controllers
-├── DataFixtures/
+├── Contract/      # PropertyScopedInterface — marks an entity as property-scoped
+├── Controller/    # nearly empty — API Platform generates everything; avoid adding controllers
+├── DataFixtures/  # two properties with disjoint memberships
+├── Doctrine/      # PropertyScopeExtension — read-side partitioning
 ├── Entity/        # Doctrine entities = API Platform resources
-├── Enum/          # e.g. State enum (ok/worn/replace) for InventoryItem
+├── Enum/          # e.g. State (ok/worn/replace), PropertyRole (manager/occupant)
 ├── Repository/
-└── State/         # API Platform providers/processors (e.g. MeProvider)
+├── Security/Voter/ # PropertyVoter — write-side partitioning
+└── State/         # API Platform providers/processors (MeProvider, PropertyScopeProcessor)
 ```
 
 ### Content negotiation
