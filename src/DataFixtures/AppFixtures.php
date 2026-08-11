@@ -11,6 +11,7 @@ use App\Entity\PropertyMember;
 use App\Entity\ShoppingItem;
 use App\Entity\User;
 use App\Entity\Work;
+use App\Enum\AccentColor;
 use App\Enum\PropertyRole;
 use App\Enum\State;
 use App\Enum\WorkPriority;
@@ -26,7 +27,7 @@ use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
  *
  * Deux logements aux coordonnées distinctes, avec des appartenances
  * volontairement **disjointes** : `sophie` et `pierre` ne voient que « Les
- * Marmottes », `marie` et `lucas` que « Le Cabanon ». `antonin` est le seul
+ * Tennis », `marie` et `lucas` que « Le Cabanon ». `antonin` est le seul
  * membre des deux, ce qui permet de tester la bascule ; `admin` n'est membre
  * d'aucun mais traverse tout via `ROLE_ADMIN`.
  */
@@ -85,23 +86,25 @@ class AppFixtures extends Fixture
      */
     private function loadProperties(ObjectManager $manager): array
     {
-        // « Les Marmottes » reprend les coordonnées des anciennes variables
+        // « Les Tennis » reprend les coordonnées des anciennes variables
         // WEATHER_*, qui ne vivent plus que comme seed de fixtures.
-        $marmottes = new Property();
-        $marmottes->setName('Les Marmottes');
-        $marmottes->setSlug('les-marmottes');
-        $marmottes->setCity('Villard-de-Lans');
-        $marmottes->setAddress('12 rue des Clarines');
-        $marmottes->setLatitude(45.064757765580204);
-        $marmottes->setLongitude(5.548400944891808);
-        $marmottes->setTimezone('Europe/Paris');
-        $marmottes->setSecondaryLocationName('Côte 2000');
-        $marmottes->setSecondaryLatitude(45.0186219050606);
-        $marmottes->setSecondaryLongitude(5.571823469177524);
-        $manager->persist($marmottes);
+        $tennis = new Property();
+        $tennis->setName('Les Tennis');
+        $tennis->setSlug('les-tennis');
+        $tennis->setCity('Villard-de-Lans');
+        $tennis->setAddress('12 rue des Clarines');
+        $tennis->setLatitude(45.064757765580204);
+        $tennis->setLongitude(5.548400944891808);
+        $tennis->setTimezone('Europe/Paris');
+        $tennis->setSecondaryLocationName('Côte 2000');
+        $tennis->setSecondaryLatitude(45.0186219050606);
+        $tennis->setSecondaryLongitude(5.571823469177524);
+        $tennis->setAccentColor(AccentColor::FOREST);
+        $manager->persist($tennis);
 
         // Coordonnées franchement éloignées : deux appels météo successifs sur
         // les deux logements doivent renvoyer des prévisions différentes.
+        // Accent distinct : la bascule de logement doit se voir à l'écran.
         $cabanon = new Property();
         $cabanon->setName('Le Cabanon');
         $cabanon->setSlug('le-cabanon');
@@ -110,9 +113,10 @@ class AppFixtures extends Fixture
         $cabanon->setLatitude(42.52673);
         $cabanon->setLongitude(3.08307);
         $cabanon->setTimezone('Europe/Paris');
+        $cabanon->setAccentColor(AccentColor::LAKE);
         $manager->persist($cabanon);
 
-        return ['les-marmottes' => $marmottes, 'le-cabanon' => $cabanon];
+        return ['les-tennis' => $tennis, 'le-cabanon' => $cabanon];
     }
 
     /**
@@ -122,12 +126,12 @@ class AppFixtures extends Fixture
     private function loadMemberships(ObjectManager $manager, array $users, array $properties): void
     {
         $memberships = [
-            ['antonin', 'les-marmottes', PropertyRole::MANAGER],
-            ['sophie',  'les-marmottes', PropertyRole::OCCUPANT],
-            ['pierre',  'les-marmottes', PropertyRole::OCCUPANT],
-            ['antonin', 'le-cabanon',    PropertyRole::OCCUPANT],
-            ['marie',   'le-cabanon',    PropertyRole::MANAGER],
-            ['lucas',   'le-cabanon',    PropertyRole::OCCUPANT],
+            ['antonin', 'les-tennis', PropertyRole::MANAGER],
+            ['sophie',  'les-tennis', PropertyRole::OCCUPANT],
+            ['pierre',  'les-tennis', PropertyRole::OCCUPANT],
+            ['antonin', 'le-cabanon', PropertyRole::OCCUPANT],
+            ['marie',   'le-cabanon', PropertyRole::MANAGER],
+            ['lucas',   'le-cabanon', PropertyRole::OCCUPANT],
         ];
 
         foreach ($memberships as [$username, $slug, $role]) {
@@ -166,7 +170,7 @@ class AppFixtures extends Fixture
     private function loadInventoryItems(ObjectManager $manager, array $categories, array $properties): void
     {
         $items = [
-            'les-marmottes' => [
+            'les-tennis' => [
                 'Cuisine'       => [['Assiettes plates', 12], ['Verres à eau', 8], ['Couteaux', 10], ['Casseroles', 4], ['Cafetière', 1]],
                 'Salle de bain' => [['Serviettes de bain', 10], ['Gants de toilette', 12], ['Tapis de bain', 2]],
                 'Chambre'       => [['Draps housse 140', 4], ['Housses de couette', 4], ['Oreillers', 6], ['Couvertures', 3]],
@@ -205,16 +209,16 @@ class AppFixtures extends Fixture
     private function loadShoppingItems(ObjectManager $manager, array $categories, array $properties): void
     {
         $items = [
-            ['Lait', 6, false, 'Produits frais', 'les-marmottes'],
-            ['Pain', 2, true, 'Produits frais', 'les-marmottes'],
-            ['Beurre', 1, false, 'Produits frais', 'les-marmottes'],
-            ['Pâtes', 4, false, 'Épicerie', 'les-marmottes'],
-            ['Café', 1, true, 'Épicerie', 'les-marmottes'],
-            ['Sel', 1, false, 'Épicerie', 'les-marmottes'],
-            ['Liquide vaisselle', 2, false, 'Cuisine', 'les-marmottes'],
-            ['Éponges', 3, false, 'Cuisine', 'les-marmottes'],
-            ['Papier toilette', 12, false, 'Salle de bain', 'les-marmottes'],
-            ['Savon', 4, true, 'Salle de bain', 'les-marmottes'],
+            ['Lait', 6, false, 'Produits frais', 'les-tennis'],
+            ['Pain', 2, true, 'Produits frais', 'les-tennis'],
+            ['Beurre', 1, false, 'Produits frais', 'les-tennis'],
+            ['Pâtes', 4, false, 'Épicerie', 'les-tennis'],
+            ['Café', 1, true, 'Épicerie', 'les-tennis'],
+            ['Sel', 1, false, 'Épicerie', 'les-tennis'],
+            ['Liquide vaisselle', 2, false, 'Cuisine', 'les-tennis'],
+            ['Éponges', 3, false, 'Cuisine', 'les-tennis'],
+            ['Papier toilette', 12, false, 'Salle de bain', 'les-tennis'],
+            ['Savon', 4, true, 'Salle de bain', 'les-tennis'],
             ['Crème solaire', 3, false, 'Salle de bain', 'le-cabanon'],
             ['Charbon de bois', 2, false, 'Extérieur', 'le-cabanon'],
             ['Riz', 3, false, 'Épicerie', 'le-cabanon'],
@@ -241,14 +245,14 @@ class AppFixtures extends Fixture
     {
         // Toutes les dates sont en juin 2026 (mois en cours)
         $occupations = [
-            ['antonin', 'les-marmottes', '2026-06-01', '2026-06-05', 'Long week-end en famille'],
-            ['sophie',  'les-marmottes', '2026-06-06', '2026-06-09', 'Visite avec les enfants'],
-            ['pierre',  'les-marmottes', '2026-06-10', '2026-06-14', null],
-            ['antonin', 'les-marmottes', '2026-06-22', '2026-06-25', 'Télétravail au calme'],
-            ['sophie',  'les-marmottes', '2026-06-26', '2026-06-30', 'Fin de mois en famille'],
-            ['marie',   'le-cabanon',    '2026-06-13', '2026-06-16', 'Week-end entre amies'],
-            ['lucas',   'le-cabanon',    '2026-06-17', '2026-06-21', 'Stage de plongée'],
-            ['antonin', 'le-cabanon',    '2026-06-27', '2026-06-30', 'Fin juin au bord de l\'eau'],
+            ['antonin', 'les-tennis', '2026-06-01', '2026-06-05', 'Long week-end en famille'],
+            ['sophie',  'les-tennis', '2026-06-06', '2026-06-09', 'Visite avec les enfants'],
+            ['pierre',  'les-tennis', '2026-06-10', '2026-06-14', null],
+            ['antonin', 'les-tennis', '2026-06-22', '2026-06-25', 'Télétravail au calme'],
+            ['sophie',  'les-tennis', '2026-06-26', '2026-06-30', 'Fin de mois en famille'],
+            ['marie',   'le-cabanon', '2026-06-13', '2026-06-16', 'Week-end entre amies'],
+            ['lucas',   'le-cabanon', '2026-06-17', '2026-06-21', 'Stage de plongée'],
+            ['antonin', 'le-cabanon', '2026-06-27', '2026-06-30', 'Fin juin au bord de l\'eau'],
         ];
 
         foreach ($occupations as [$username, $slug, $start, $end, $notes]) {
@@ -269,13 +273,13 @@ class AppFixtures extends Fixture
     private function loadNotes(ObjectManager $manager, array $users, array $properties): void
     {
         $notes = [
-            ['antonin', 'les-marmottes', '2026-06-02 10:15:00', 'Chaudière',         "Pensez à purger les radiateurs avant de partir, la chaudière fait du bruit sinon."],
-            ['sophie',  'les-marmottes', '2026-06-08 18:42:00', 'Code Wifi',         "Le nouveau code Wifi est noté sur le frigo (post-it bleu)."],
-            ['pierre',  'les-marmottes', '2026-06-12 09:00:00', 'Voisins du dessus', "Les voisins du dessus refont leur sol jusqu'au 20 juin, prévoir des bouchons d'oreille."],
-            ['antonin', 'les-marmottes', '2026-06-23 08:00:00', 'Poubelles',         "Sortie des poubelles : jaunes le mardi soir, ménagères le jeudi soir."],
-            ['marie',   'le-cabanon',    '2026-06-15 21:30:00', 'Boulangerie',       "La boulangerie du port est fermée le mardi, prévoir le pain à l'avance."],
-            ['lucas',   'le-cabanon',    '2026-06-19 14:00:00', 'Local à bateaux',   "La clé du local à bateaux est dans le tiroir de l'entrée."],
-            ['antonin', 'le-cabanon',    '2026-06-28 09:30:00', 'Volets',            "Fermer les volets côté mer avant de partir, la tramontane les abîme."],
+            ['antonin', 'les-tennis', '2026-06-02 10:15:00', 'Chaudière',         "Pensez à purger les radiateurs avant de partir, la chaudière fait du bruit sinon."],
+            ['sophie',  'les-tennis', '2026-06-08 18:42:00', 'Code Wifi',         "Le nouveau code Wifi est noté sur le frigo (post-it bleu)."],
+            ['pierre',  'les-tennis', '2026-06-12 09:00:00', 'Voisins du dessus', "Les voisins du dessus refont leur sol jusqu'au 20 juin, prévoir des bouchons d'oreille."],
+            ['antonin', 'les-tennis', '2026-06-23 08:00:00', 'Poubelles',         "Sortie des poubelles : jaunes le mardi soir, ménagères le jeudi soir."],
+            ['marie',   'le-cabanon', '2026-06-15 21:30:00', 'Boulangerie',       "La boulangerie du port est fermée le mardi, prévoir le pain à l'avance."],
+            ['lucas',   'le-cabanon', '2026-06-19 14:00:00', 'Local à bateaux',   "La clé du local à bateaux est dans le tiroir de l'entrée."],
+            ['antonin', 'le-cabanon', '2026-06-28 09:30:00', 'Volets',            "Fermer les volets côté mer avant de partir, la tramontane les abîme."],
         ];
 
         foreach ($notes as [$username, $slug, $createdAt, $title, $content]) {
@@ -296,11 +300,11 @@ class AppFixtures extends Fixture
     private function loadWorks(ObjectManager $manager, array $users, array $properties): void
     {
         $works = [
-            ['antonin', 'les-marmottes', 'Remplacer le ballon d\'eau chaude',       WorkStatus::PLANNED,     WorkType::PRO, WorkPriority::HIGH,   1200],
-            ['sophie',  'les-marmottes', 'Repeindre la chambre du fond',            WorkStatus::SUGGESTED,   WorkType::DIY, WorkPriority::LOW,     300],
-            ['pierre',  'les-marmottes', 'Réviser la chaudière',                    WorkStatus::DONE,        WorkType::PRO, WorkPriority::MEDIUM,  180],
-            ['marie',   'le-cabanon',    'Reprendre l\'étanchéité de la terrasse',  WorkStatus::IN_PROGRESS, WorkType::PRO, WorkPriority::HIGH,   2500],
-            ['lucas',   'le-cabanon',    'Installer une douche extérieure',         WorkStatus::SUGGESTED,   WorkType::DIY, WorkPriority::LOW,     450],
+            ['antonin', 'les-tennis', 'Remplacer le ballon d\'eau chaude',       WorkStatus::PLANNED,     WorkType::PRO, WorkPriority::HIGH,   1200],
+            ['sophie',  'les-tennis', 'Repeindre la chambre du fond',            WorkStatus::SUGGESTED,   WorkType::DIY, WorkPriority::LOW,     300],
+            ['pierre',  'les-tennis', 'Réviser la chaudière',                    WorkStatus::DONE,        WorkType::PRO, WorkPriority::MEDIUM,  180],
+            ['marie',   'le-cabanon', 'Reprendre l\'étanchéité de la terrasse',  WorkStatus::IN_PROGRESS, WorkType::PRO, WorkPriority::HIGH,   2500],
+            ['lucas',   'le-cabanon', 'Installer une douche extérieure',         WorkStatus::SUGGESTED,   WorkType::DIY, WorkPriority::LOW,     450],
         ];
 
         foreach ($works as [$username, $slug, $title, $status, $type, $priority, $cost]) {

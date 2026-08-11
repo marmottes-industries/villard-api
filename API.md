@@ -471,8 +471,8 @@ Pas de `PUT`.
 ```json
 {
     "id": 1,
-    "name": "Les Marmottes",
-    "slug": "les-marmottes",
+    "name": "Les Tennis",
+    "slug": "les-tennis",
     "city": "Villard-de-Lans",
     "address": "12 rue des Clarines",
     "latitude": 45.064757765580204,
@@ -481,6 +481,8 @@ Pas de `PUT`.
     "secondaryLocationName": "Côte 2000",
     "secondaryLatitude": 45.0186219050606,
     "secondaryLongitude": 5.571823469177524,
+    "accentColor": "forest",
+    "accentHex": "#2E4A39",
     "archived": false
 }
 ```
@@ -495,7 +497,22 @@ Champs :
 - `timezone` (string, défaut `"Europe/Paris"`) — identifiant de fuseau valide.
 - `secondaryLocationName` / `secondaryLatitude` / `secondaryLongitude` (optionnels) — point météo secondaire, typiquement
   un domaine d'altitude. **Les trois vont ensemble** : le point n'est exploité que s'ils sont tous les trois renseignés.
+- `accentColor` (enum, défaut `"forest"`) — couleur d'accent du logement, cf. tableau ci-dessous. Une valeur hors palette
+  est rejetée en `400`.
+- `accentHex` (string, **lecture seule**) — hexadécimal correspondant à `accentColor`. À utiliser pour teinter
+  l'interface : le client n'a pas à embarquer la table de correspondance.
 - `archived` (bool, défaut `false`) — un logement archivé reste lisible ; au client de le masquer du sélecteur.
+
+Palette d'accents (fermée — chaque teinte tient le contraste AA avec du texte blanc) :
+
+| `accentColor` | `accentHex` | Libellé  |
+|---------------|-------------|----------|
+| `forest`      | `#2E4A39`   | Sapin    |
+| `lake`        | `#2C5159`   | Lac      |
+| `wood`        | `#97653A`   | Bois     |
+| `slate`       | `#4F6076`   | Ardoise  |
+| `plum`        | `#6E4B5E`   | Myrtille |
+| `lichen`      | `#5F6440`   | Lichen   |
 
 > ⚠️ Supprimer un logement qui porte encore des données échoue sur la contrainte de clé étrangère. Archiver, ou vider
 > le logement d'abord.
@@ -669,12 +686,14 @@ c'est la seule requête nécessaire pour amorcer un sélecteur de logement au d�
             "property": {
                 "@id": "/api/properties/1",
                 "id": 1,
-                "name": "Les Marmottes",
-                "slug": "les-marmottes",
+                "name": "Les Tennis",
+                "slug": "les-tennis",
                 "city": "Villard-de-Lans",
                 "latitude": 45.064757765580204,
                 "longitude": 5.548400944891808,
                 "timezone": "Europe/Paris",
+                "accentColor": "forest",
+                "accentHex": "#2E4A39",
                 "archived": false
             }
         }
@@ -692,6 +711,8 @@ type PropertySummary = {
     latitude: number
     longitude: number
     timezone: string
+    accentColor: 'forest' | 'lake' | 'wood' | 'slate' | 'plum' | 'lichen'
+    accentHex: string
     archived: boolean
 }
 
@@ -937,7 +958,7 @@ logement, obligatoire au-delà.
     "locations": [
         {
             "key": "main",
-            "name": "Les Marmottes",
+            "name": "Les Tennis",
             "latitude": 45.064757765580204,
             "longitude": 5.548400944891808,
             "elevation": 996,

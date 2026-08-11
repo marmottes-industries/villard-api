@@ -28,7 +28,7 @@ check() {
 }
 
 FAILED=0
-SOPHIE=$(login sophie)   # membre de « Les Marmottes » uniquement
+SOPHIE=$(login sophie)   # membre de « Les Tennis » uniquement
 MARIE=$(login marie)     # membre de « Le Cabanon » uniquement (manager)
 ANTONIN=$(login antonin) # membre des deux
 ADMIN=$(login admin)     # ROLE_ADMIN, membre d'aucun
@@ -46,10 +46,10 @@ post_iri() {
     | python3 -c 'import sys,json; print(json.load(sys.stdin).get("@id",""))'
 }
 
-MARMOTTES=$(get "$ANTONIN" /api/properties | python3 -c '
+TENNIS=$(get "$ANTONIN" /api/properties | python3 -c '
 import sys,json
 for p in json.load(sys.stdin)["member"]:
-    if p["slug"] == "les-marmottes": print(p["@id"])')
+    if p["slug"] == "les-tennis": print(p["@id"])')
 CABANON=$(get "$ANTONIN" /api/properties | python3 -c '
 import sys,json
 for p in json.load(sys.stdin)["member"]:
@@ -57,7 +57,7 @@ for p in json.load(sys.stdin)["member"]:
 CABANON_ITEM=$(get "$MARIE" /api/inventory_items | python3 -c 'import sys,json; print(json.load(sys.stdin)["member"][0]["@id"])')
 CABANON_NOTE=$(get "$MARIE" /api/notes | python3 -c 'import sys,json; print(json.load(sys.stdin)["member"][0]["@id"])')
 
-echo "logements: marmottes=$MARMOTTES cabanon=$CABANON"
+echo "logements: tennis=$TENNIS cabanon=$CABANON"
 echo
 echo "— Cloisonnement des collections (sophie, mono-logement) —"
 check "GET /api/occupations"            5 "$(count "$SOPHIE" /api/occupations)"
@@ -72,7 +72,7 @@ echo
 echo "— Paramètre ?property= forgé —"
 check "notes du logement interdit"      0 "$(count "$SOPHIE" "/api/notes?property=$CABANON")"
 check "inventaire du logement interdit" 0 "$(count "$SOPHIE" "/api/inventory_items?property=$CABANON")"
-check "notes du logement autorisé"      4 "$(count "$SOPHIE" "/api/notes?property=$MARMOTTES")"
+check "notes du logement autorisé"      4 "$(count "$SOPHIE" "/api/notes?property=$TENNIS")"
 
 echo
 echo "— Accès item interdit —"
@@ -112,10 +112,10 @@ check "PATCH note du Cabanon" 404 "$R"
 echo
 echo "— Rôle local : gestionnaire vs occupant, dans un logement autorisé —"
 del() { curl -sk -o /dev/null -w '%{http_code}' -X DELETE "$API$2" -H "Authorization: Bearer $1"; }
-MARMOTTES_ITEM=$(get "$SOPHIE" /api/inventory_items | python3 -c 'import sys,json; print(json.load(sys.stdin)["member"][0]["@id"])')
-# sophie est occupante des Marmottes, antonin en est gestionnaire.
-check "DELETE inventaire (occupant)"     403 "$(del "$SOPHIE" "$MARMOTTES_ITEM")"
-check "DELETE inventaire (gestionnaire)" 204 "$(del "$ANTONIN" "$MARMOTTES_ITEM")"
+TENNIS_ITEM=$(get "$SOPHIE" /api/inventory_items | python3 -c 'import sys,json; print(json.load(sys.stdin)["member"][0]["@id"])')
+# sophie est occupante des Tennis, antonin en est gestionnaire.
+check "DELETE inventaire (occupant)"     403 "$(del "$SOPHIE" "$TENNIS_ITEM")"
+check "DELETE inventaire (gestionnaire)" 204 "$(del "$ANTONIN" "$TENNIS_ITEM")"
 
 # antonin est simple occupant du Cabanon : il ne gère pas ses membres.
 # marie, gestionnaire du Cabanon, y ajoute en revanche qui elle veut.

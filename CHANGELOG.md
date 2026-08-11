@@ -17,8 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a single call.
 - `?property=<IRI>` filter on every business collection.
 - `bin/check-property-scope.sh` — HTTP scenarios covering the partitioning, in the absence of a test suite.
+- `Property.accentColor` — a per-property accent colour, picked from a closed palette (`App\Enum\AccentColor`:
+  `forest`, `lake`, `wood`, `slate`, `plum`, `lichen`). Exposed in `property:summary`, so `GET /api/me` is enough for a
+  client to tint its UI on the active property. The read-only `accentHex` field carries the matching hexadecimal, so
+  clients don't duplicate the palette.
 
 ### Changed
+
+- The legacy property is renamed from « Les Marmottes » to « Les Tennis » (slug `les-tennis`). « Les Marmottes » is the
+  name of the service, not of the Villard-de-Lans flat.
 
 - Deleting an `InventoryItem` or a `ShoppingItem` now requires the property's local **manager** instead of a global
   `ROLE_ADMIN`. `ROLE_ADMIN` keeps the capability.

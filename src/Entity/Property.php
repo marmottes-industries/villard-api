@@ -12,6 +12,7 @@ use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
+use App\Enum\AccentColor;
 use App\Repository\PropertyRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -115,6 +116,15 @@ class Property
     #[Assert\Range(min: -180, max: 180)]
     #[Groups(['property:read', 'property:write'])]
     private ?float $secondaryLongitude = null;
+
+    /**
+     * Couleur d'accent du logement. Fait partie du résumé : le sélecteur de
+     * logement et la teinte de l'interface s'appuient dessus dès `/api/me`,
+     * sans second appel.
+     */
+    #[ORM\Column(length: 32, enumType: AccentColor::class, options: ['default' => AccentColor::FOREST])]
+    #[Groups(['property:read', 'property:write', 'property:summary'])]
+    private AccentColor $accentColor = AccentColor::FOREST;
 
     #[ORM\Column(options: ['default' => false])]
     #[Groups(['property:read', 'property:write', 'property:summary'])]
@@ -265,6 +275,28 @@ class Property
         return null !== $this->secondaryLocationName
             && null !== $this->secondaryLatitude
             && null !== $this->secondaryLongitude;
+    }
+
+    public function getAccentColor(): AccentColor
+    {
+        return $this->accentColor;
+    }
+
+    public function setAccentColor(AccentColor $accentColor): static
+    {
+        $this->accentColor = $accentColor;
+
+        return $this;
+    }
+
+    /**
+     * Hexadécimal correspondant à l'accent, exposé en lecture seule : les
+     * clients teintent leur interface sans dupliquer la table de la palette.
+     */
+    #[Groups(['property:read', 'property:summary'])]
+    public function getAccentHex(): string
+    {
+        return $this->accentColor->getHex();
     }
 
     public function isArchived(): bool

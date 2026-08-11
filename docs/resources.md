@@ -71,9 +71,11 @@ Le second groupe embarque les logements de l'utilisateur dans `memberships`, au 
       "role": "manager",
       "property": {
         "@id": "/api/properties/1", "id": 1,
-        "name": "Les Marmottes", "slug": "les-marmottes", "city": "Villard-de-Lans",
+        "name": "Les Tennis", "slug": "les-tennis", "city": "Villard-de-Lans",
         "latitude": 45.0647, "longitude": 5.5484,
-        "timezone": "Europe/Paris", "archived": false
+        "timezone": "Europe/Paris",
+        "accentColor": "forest", "accentHex": "#2E4A39",
+        "archived": false
       }
     }
   ]
@@ -135,11 +137,15 @@ Un logement géré par l'application. Porte aussi ses coordonnées météo : le 
 | `secondaryLocationName` | string (255) | ✓ | ✓ | optionnel — ex. « Côte 2000 » |
 | `secondaryLatitude` | float | ✓ | ✓ | optionnel |
 | `secondaryLongitude` | float | ✓ | ✓ | optionnel |
+| `accentColor` | enum `AccentColor` | ✓ | ✓ | défaut `forest` — `forest`, `lake`, `wood`, `slate`, `plum`, `lichen` |
+| `accentHex` | string | ✓ | — (dérivé) | hexadécimal de `accentColor` |
 | `archived` | bool | ✓ | ✓ | défaut `false` |
 
 > Le point secondaire n'est exploité par la météo que si ses **trois** champs sont renseignés ; sinon il est ignoré.
 
-Un sous-ensemble (`id`, `name`, `slug`, `city`, `latitude`, `longitude`, `timezone`, `archived`) porte aussi le groupe `property:summary`, utilisé par `/api/me`.
+> `accentColor` est une palette **fermée** (`App\Enum\AccentColor`) et non un hexadécimal libre : les clients posent du texte blanc sur cet accent, chaque teinte est donc calibrée pour tenir le contraste AA. `accentHex` évite aux clients de dupliquer la table de correspondance.
+
+Un sous-ensemble (`id`, `name`, `slug`, `city`, `latitude`, `longitude`, `timezone`, `accentColor`, `accentHex`, `archived`) porte aussi le groupe `property:summary`, utilisé par `/api/me`.
 
 ### PropertyMember — `/api/property_members`
 
