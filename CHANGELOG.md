@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-12
+
 ### Added
 
 - `Room` (`/api/rooms`) — a room within a property (« Chambre 1 », « Cabane à skis »), property-scoped like
@@ -32,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   properties and therefore cannot be split per property. It stays writable until both clients ship, then goes away in
   the next major.
 - `Category` keeps its role on `ShoppingItem`, where a shared aisle across properties makes sense.
-- `InventoryItem.location` is unchanged. It never was the room: it is the spot *inside* the room (« placard du
+- `InventoryItem.location` is unchanged. It never was the room: it is the spot _inside_ the room (« placard du
   haut »), and it stays exactly as it is.
 - `bin/check-property-scope.sh` reads its base URL from `$API`, so it can run against a plain HTTP server when the local
   TLS certificate isn't installed.
@@ -138,7 +140,8 @@ assumed data loss.
 
 - Initial release.
 
-[unreleased]: https://github.com/marmottes-industries/villard-api/compare/v2.0.0...main
+[unreleased]: https://github.com/marmottes-industries/villard-api/compare/v2.1.0...main
+[2.1.0]: https://github.com/marmottes-industries/villard-api/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/marmottes-industries/villard-api/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/marmottes-industries/villard-api/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/marmottes-industries/villard-api/compare/v1.2.0...v1.2.1
