@@ -12,10 +12,11 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
-use App\Contract\PropertyScopedInterface;
+use App\Contract\RoomScopedInterface;
 use App\Enum\State;
 use App\Repository\InventoryItemRepository;
 use App\State\PropertyScopeProcessor;
+use App\Validator\RoomBelongsToProperty;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -23,6 +24,10 @@ use Symfony\Component\Validator\Constraints as Assert;
  * Cf. {@see Occupation} pour la logique des expressions de sécurité. La
  * suppression, jadis réservée à `ROLE_ADMIN`, passe au gestionnaire local du
  * logement — `ROLE_ADMIN` la conserve via le bypass du voter.
+ *
+ * Trois niveaux de rangement, à ne pas confondre : {@see Room} dit dans quelle
+ * pièce, {@see self::$location} dit où dans cette pièce, et {@see Category} ne
+ * survit que le temps de la transition (cf. le champ).
  */
 #[ApiResource(
     operations: [
@@ -39,6 +44,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 )]
 #[ApiFilter(SearchFilter::class, properties: [
     'property' => 'exact',
+    'room' => 'exact',
     'name' => 'ipartial',
     'category' => 'exact',
     'state' => 'exact',
@@ -47,7 +53,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 ])]
 #[ApiFilter(OrderFilter::class, properties: ['name', 'quantity', 'state'], arguments: ['orderParameterName' => 'order'])]
 #[ORM\Entity(repositoryClass: InventoryItemRepository::class)]
-class InventoryItem implements PropertyScopedInterface
+#[RoomBelongsToProperty]
+class InventoryItem implements RoomScopedInterface
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -63,9 +70,22 @@ class InventoryItem implements PropertyScopedInterface
     #[Assert\PositiveOrZero]
     private ?int $quantity = null;
 
+    /**
+     * @deprecated Remplacée par {@see self::$room}. Devenue nullable le temps
+     *             que les deux clients basculent ; le champ et sa colonne
+     *             seront retirés à la prochaine version majeure.
+     */
     #[ORM\ManyToOne(inversedBy: 'inventoryItems')]
-    #[ORM\JoinColumn(nullable: false)]
     private ?Category $category = null;
+
+    /**
+     * Pièce du logement où se trouve l'article. Nullable : un article peut
+     * n'être rattaché à aucune pièce, et la suppression d'une pièce délie ses
+     * articles (`ON DELETE SET NULL`) plutôt que d'échouer.
+     */
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(onDelete: 'SET NULL')]
+    private ?Room $room = null;
 
     #[ORM\Column(enumType: State::class, options: ['default' => STATE::OK])]
     private State $state = State::OK;
@@ -73,6 +93,10 @@ class InventoryItem implements PropertyScopedInterface
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $note = null;
 
+    /**
+     * Précision de rangement à l'intérieur de la pièce — « placard du haut »,
+     * « sous le lit ». Complète {@see self::$room}, ne la remplace pas.
+     */
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $location = null;
 
@@ -134,6 +158,18 @@ class InventoryItem implements PropertyScopedInterface
     public function setCategory(?Category $category): static
     {
         $this->category = $category;
+
+        return $this;
+    }
+
+    public function getRoom(): ?Room
+    {
+        return $this->room;
+    }
+
+    public function setRoom(?Room $room): static
+    {
+        $this->room = $room;
 
         return $this;
     }

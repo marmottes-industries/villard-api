@@ -44,7 +44,7 @@ API Platform expose **tout** par défaut. Pour éviter les fuites, `User`, `Prop
 
 Le `password` n'est dans aucun groupe → non exposable. `property:summary` est un sous-ensemble activé en plus de `user:read` sur l'opération `/api/me` : il embarque les logements dans `memberships` au lieu de simples IRIs, ce qui suffit à amorcer le sélecteur de logement d'un client en un appel.
 
-Les autres entités (Category, InventoryItem, ShoppingItem, Note, Occupation, Work) n'ont **pas encore** de groupes définis : tous leurs champs scalaires sont lus/écrits par défaut. C'est un point d'évolution prévu.
+Les autres entités (Category, Room, InventoryItem, ShoppingItem, Note, Occupation, Work) n'ont **pas encore** de groupes définis : tous leurs champs scalaires sont lus/écrits par défaut. C'est un point d'évolution prévu.
 
 ### 5. Cloisonnement multi-logements
 
@@ -70,6 +70,17 @@ Toutes les données métier appartiennent à un **logement** (`Property`). Le cl
 
 **Point d'ordonnancement à connaître** : dans le pipeline d'API Platform, `securityPostDenormalize` et la validation s'exécutent **avant** les processors. Un champ rempli par un processor ne peut donc pas être exigé par une contrainte de validation ni testé par une expression de sécurité. C'est pourquoi `property` n'a pas de `Assert\NotNull` et pourquoi les expressions `POST` tolèrent explicitement un logement nul, le processor tranchant ensuite (assignation ou 422).
 
+**Exception à cette tolérance : `Room`.** Ses écritures exigent `PROPERTY_MANAGE`, et son `POST` ne tolère **pas** de logement nul. L'échappatoire n'existe chez les autres que pour les builds mobiles antérieurs au multi-logements ; or aucun client installé ne poste de pièce. La conserver dégraderait silencieusement `MANAGE` en `CONTRIBUTE`, puisque le repli du processor ne revérifie que `CONTRIBUTE`.
+
+#### Cohérence pièce / logement
+
+Une `Room` appartenant elle-même à un logement, un utilisateur membre de **deux** logements peut rattacher un article du logement A à une pièce du logement B : les deux IRI lui étant accessibles, ni l'extension ni le voter ne s'y opposent. Deux contrôles complémentaires ferment ce trou, sur les entités marquées `App\Contract\RoomScopedInterface` :
+
+- **`App\Validator\RoomBelongsToProperty`** (contrainte de classe) couvre le `POST` avec logement explicite et tous les `PUT` / `PATCH` — ces derniers n'ont **aucun** processor sur `InventoryItem`, c'est donc le seul filet possible. Elle ne compare que si les deux valeurs sont non nulles : au `POST` où le client omet `property`, le repli n'a pas encore tourné et comparer produirait un faux 422 sur le cas nominal.
+- **`PropertyScopeProcessor`** rattrape le cas restant, après résolution du repli : un `ROLE_ADMIN` par ailleurs membre d'un unique logement se voit appliquer ce logement, alors que le bypass du voter lui rend visibles les pièces de tous les autres.
+
+Les deux comparent des identifiants, pas des instances : rien ne garantit que Doctrine serve le même objet `Property` pour un proxy non initialisé et pour l'IRI résolue depuis le payload.
+
 `ROLE_ADMIN` court-circuite l'extension comme le voter : c'est un super-rôle global qui traverse tous les logements.
 
 ### 6. Formats supportés
@@ -88,9 +99,11 @@ src/
 ├── ApiResource/        # Ressources API découplées des entités Doctrine
 │   └── WeatherForecast.php
 ├── Command/            # Commandes console
-│   └── CreateUserCommand.php       # app:create-user
+│   ├── CreateUserCommand.php       # app:create-user
+│   └── ImportRoomsFromCategoriesCommand.php # app:rooms:import-from-categories
 ├── Contract/
-│   └── PropertyScopedInterface.php # marque une entité comme rattachée à un logement
+│   ├── PropertyScopedInterface.php # marque une entité comme rattachée à un logement
+│   └── RoomScopedInterface.php     # ... et rattachable à une pièce de ce logement
 ├── Controller/         # Quasi vide — tout est généré par API Platform
 ├── DataFixtures/       # Fixtures dev/test (deux logements, appartenances disjointes)
 │   └── AppFixtures.php
@@ -103,11 +116,13 @@ src/
 │   ├── Occupation.php
 │   ├── Property.php
 │   ├── PropertyMember.php
+│   ├── Room.php
 │   ├── ShoppingItem.php
 │   ├── User.php
 │   └── Work.php
 ├── Enum/
 │   ├── PropertyRole.php # rôle local dans un logement (manager / occupant)
+│   ├── RoomType.php     # nature d'une pièce (kitchen, bedroom, …), nullable
 │   └── State.php        # État d'un InventoryItem (ok / worn / replace)
 ├── Repository/         # Repos Doctrine
 ├── Security/Voter/
@@ -115,6 +130,8 @@ src/
 ├── State/
 │   ├── MeProvider.php              # Provider API Platform pour GET /api/me
 │   └── PropertyScopeProcessor.php  # repli mono-logement au POST
+├── Validator/
+│   └── RoomBelongsToProperty.php   # cohérence pièce / logement (cf. § 5)
 └── Kernel.php
 ```
 

@@ -78,7 +78,7 @@ Every entity in `src/Entity/` carrying `#[ApiResource]` exposes CRUD under `/api
 
 ### Serialization groups — partially applied
 
-`User` (`user:read` / `user:write`), `Property` (`property:read` / `property:write`) and `PropertyMember` (`member:read` / `member:write`) use serialization groups — `User.password` is in no group and therefore not exposable. **Other entities (Category, InventoryItem, ShoppingItem, Note, Occupation, Work) currently expose all scalar fields by default.** When adding fields to those entities, assume they will be exposed; when adding sensitive fields, introduce groups first.
+`User` (`user:read` / `user:write`), `Property` (`property:read` / `property:write`) and `PropertyMember` (`member:read` / `member:write`) use serialization groups — `User.password` is in no group and therefore not exposable. **Other entities (Category, Room, InventoryItem, ShoppingItem, Note, Occupation, Work) currently expose all scalar fields by default.** When adding fields to those entities, assume they will be exposed; when adding sensitive fields, introduce groups first.
 
 `property:summary` is a cross-cutting group: it is activated *in addition to* `user:read` on the `/api/me` operation so that `memberships` embeds each property instead of an IRI.
 
@@ -92,6 +92,12 @@ Every business resource is partitioned by property (logement). Two mechanisms, b
 **Adding a new business resource? Implement `PropertyScopedInterface` and the scoping comes for free.** Don't hand-roll a filter.
 
 `ROLE_ADMIN` bypasses both — it is a global super-role that traverses every property.
+
+**Rooms are the exception to two conventions.** `Room` (`/api/rooms`) is property-scoped like the rest, but its writes require `PROPERTY_MANAGE`, and its `POST` does **not** carry the usual `object.getProperty() == null or …` escape hatch. That hatch exists only for mobile builds predating multi-property support; no installed client posts rooms, and keeping it would silently downgrade `MANAGE` to `CONTRIBUTE` since the processor's fallback only re-checks `CONTRIBUTE`.
+
+Entities that reference a room (`InventoryItem`, `Work`) implement `App\Contract\RoomScopedInterface`. Consistency between `room.property` and the entity's own `property` is enforced twice: `App\Validator\RoomBelongsToProperty` (the only net on `PUT`/`PATCH`, which have no processor on `InventoryItem`) and a check in `PropertyScopeProcessor` for the `POST`-without-`property` path. Neither alone is sufficient — see `docs/architecture.md` § 5.
+
+`InventoryItem.category` is **deprecated**, superseded by `room`, and now nullable. It stays writable until both clients ship, then goes away.
 
 **Pipeline ordering gotcha**: `securityPostDenormalize` and validation run **before** processors. A field a processor fills therefore cannot be required by a validation constraint nor tested by a security expression. That's why `property` carries no `Assert\NotNull`, and why the `POST` expressions explicitly tolerate a null property — `src/State/PropertyScopeProcessor.php` then either applies the single-property fallback or throws a 422. The same ordering had silently broken `POST /api/notes` and `POST /api/works` for non-admins, since both clients omit `author`.
 

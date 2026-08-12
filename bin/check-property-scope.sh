@@ -13,8 +13,10 @@
 # repli mono-logement et le sélecteur masqué, et le laisser à deux logements
 # fausse silencieusement tout ce qui tourne ensuite.
 #
+# Surchargeable quand le certificat TLS local n'est pas installé :
+#   API=http://127.0.0.1:8000 bash bin/check-property-scope.sh
 set -uo pipefail
-API=https://127.0.0.1:8000
+API=${API:-https://127.0.0.1:8000}
 
 login() {
   curl -sk -X POST "$API/api/login" -H 'Content-Type: application/json' \
@@ -101,6 +103,9 @@ BODY='{"name":"Repli","quantity":1,"category":"'$CATEGORY'"}'
 R=$(post "$SOPHIE" /api/inventory_items "$BODY");  check "POST inventaire sans logement" 201 "$R"
 BODY='{"name":"X","quantity":1,"category":"'$CATEGORY'","property":"'$CABANON'"}'
 R=$(post "$SOPHIE" /api/inventory_items "$BODY");  check "POST inventaire logement interdit" 400 "$R"
+# `category` est devenue nullable et n'est plus envoyée par les clients à jour.
+BODY='{"name":"Sans catégorie","quantity":1}'
+R=$(post "$SOPHIE" /api/inventory_items "$BODY");  check "POST inventaire sans catégorie" 201 "$R"
 
 # Écriture sur un item d'un autre logement : l'extension d'item masque la
 # ressource avant même le voter, d'où un 404 et non un 403.
@@ -136,10 +141,54 @@ check "DELETE membre (gestionnaire)"          204 "$(del "$MARIE" "$NEW_MEMBER")
 check "GET /api/me après retrait (sophie)"      1 "$(memberships "$SOPHIE")"
 
 echo
+echo "— Pièces : écritures réservées au gestionnaire —"
+check "GET /api/rooms (sophie, Tennis)"   6 "$(count "$SOPHIE" /api/rooms)"
+check "GET /api/rooms (marie, Cabanon)"   5 "$(count "$MARIE" /api/rooms)"
+check "pièces du logement interdit"       0 "$(count "$SOPHIE" "/api/rooms?property=$CABANON")"
+
+BODY='{"name":"Mezzanine","type":"bedroom","position":9,"property":"'$TENNIS'"}'
+R=$(post "$SOPHIE"  /api/rooms "$BODY"); check "POST pièce (occupant)"     403 "$R"
+R=$(post "$ANTONIN" /api/rooms "$BODY"); check "POST pièce (gestionnaire)" 201 "$R"
+# Contrairement aux cinq ressources historiques, le POST d'une pièce ne tolère
+# pas un logement nul : l'échappatoire dégraderait MANAGE en CONTRIBUTE, le
+# repli de PropertyScopeProcessor ne revérifiant que CONTRIBUTE.
+BODY='{"name":"Sans logement"}'
+R=$(post "$SOPHIE"  /api/rooms "$BODY"); check "POST pièce sans logement (occupant)" 403 "$R"
+
+echo
+echo "— Cohérence pièce / logement —"
+CABANON_ROOM=$(get "$MARIE"  /api/rooms | python3 -c 'import sys,json; print(json.load(sys.stdin)["member"][0]["@id"])')
+TENNIS_ROOM=$(get  "$SOPHIE" /api/rooms | python3 -c 'import sys,json; print(json.load(sys.stdin)["member"][0]["@id"])')
+check "GET pièce du Cabanon (sophie)" 404 "$(status "$SOPHIE" "$CABANON_ROOM")"
+
+# antonin est le seul à voir les deux logements : c'est donc le seul compte qui
+# puisse croiser deux IRI valides, et le seul à exercer réellement la contrainte
+# RoomBelongsToProperty — ni l'extension Doctrine ni le voter ne le bloquent.
+BODY='{"name":"Croisé","quantity":1,"property":"'$TENNIS'","room":"'$CABANON_ROOM'"}'
+R=$(post "$ANTONIN" /api/inventory_items "$BODY"); check "POST article pièce d'un autre logement" 422 "$R"
+# Pour sophie la pièce du Cabanon n'existe pas : l'extension d'item la masque
+# avant toute validation, d'où un 400 « Item not found » et non un 422.
+BODY='{"name":"Masqué","quantity":1,"room":"'$CABANON_ROOM'"}'
+R=$(post "$SOPHIE"  /api/inventory_items "$BODY"); check "POST article pièce invisible"           400 "$R"
+# Logement omis : c'est le filet de PropertyScopeProcessor qui tranche, la
+# contrainte ayant relâché sa comparaison faute de logement à comparer.
+BODY='{"name":"Repli pièce","quantity":1,"room":"'$TENNIS_ROOM'"}'
+R=$(post "$SOPHIE"  /api/inventory_items "$BODY"); check "POST article sans logement + pièce"     201 "$R"
+
+# PUT/PATCH d'un article n'ont aucun processor : seule la contrainte protège.
+PATCH_ITEM=$(get "$ANTONIN" "/api/inventory_items?property=$TENNIS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["member"][0]["@id"])')
+BODY='{"room":"'$CABANON_ROOM'"}'
+R=$(curl -sk -o /dev/null -w '%{http_code}' -X PATCH "$API$PATCH_ITEM" -H "Authorization: Bearer $ANTONIN" \
+      -H 'Content-Type: application/merge-patch+json' -d "$BODY")
+check "PATCH article vers pièce d'un autre logement" 422 "$R"
+
+echo
 echo "— ROLE_ADMIN traverse tous les logements —"
 check "GET /api/occupations (admin)"     8 "$(count "$ADMIN" /api/occupations)"
 check "GET /api/properties (admin)"      2 "$(count "$ADMIN" /api/properties)"
 check "GET item du Cabanon (admin)"    200 "$(status "$ADMIN" "$CABANON_ITEM")"
+# 11 pièces des fixtures + la « Mezzanine » créée plus haut.
+check "GET /api/rooms (admin)"          12 "$(count "$ADMIN" /api/rooms)"
 
 echo
 [ "$FAILED" = 0 ] && echo "TOUS LES SCÉNARIOS PASSENT" || echo "DES SCÉNARIOS ÉCHOUENT"

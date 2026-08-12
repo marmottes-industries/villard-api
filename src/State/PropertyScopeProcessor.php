@@ -7,6 +7,7 @@ use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\State\ProcessorInterface;
 use App\Contract\PropertyScopedInterface;
+use App\Contract\RoomScopedInterface;
 use App\Entity\Property;
 use App\Entity\User;
 use App\Repository\PropertyMemberRepository;
@@ -56,6 +57,21 @@ final readonly class PropertyScopeProcessor implements ProcessorInterface
             if (!$this->security->isGranted(PropertyVoter::CONTRIBUTE, $data->getProperty())) {
                 throw new UnprocessableEntityHttpException('Logement invalide ou non autorisé.');
             }
+        }
+
+        /*
+         * Second passage sur la cohérence pièce / logement.
+         * {@see \App\Validator\RoomBelongsToProperty} ne compare que si les deux
+         * valeurs sont non nulles, or au `POST` le logement peut n'avoir été
+         * résolu qu'à l'instant. Le cas restant est celui d'un `ROLE_ADMIN`
+         * membre d'un unique logement : le repli lui applique ce logement, mais
+         * le bypass du voter lui rend visibles les pièces de tous les autres.
+         */
+        if ($data instanceof RoomScopedInterface
+            && null !== $data->getRoom()
+            && $data->getRoom()->getProperty()?->getId() !== $data->getProperty()?->getId()
+        ) {
+            throw new UnprocessableEntityHttpException('La pièce choisie appartient à un autre logement.');
         }
 
         return $this->persistProcessor->process($data, $operation, $uriVariables, $context);

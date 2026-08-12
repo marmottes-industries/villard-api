@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Room` (`/api/rooms`) — a room within a property (« Chambre 1 », « Cabane à skis »), property-scoped like
+  every other business resource. Unlike them, its writes require the property's local **manager**, and its `POST` does
+  not tolerate a null `property`: the escape hatch only exists for mobile builds predating multi-property support, and
+  keeping it would silently downgrade `MANAGE` to `CONTRIBUTE`.
+- `App\Enum\RoomType` — `kitchen`, `bathroom`, `toilet`, `bedroom`, `living_room`, `office`, `laundry`, `hallway`,
+  `garage`, `cellar`, `attic`, `outdoor`. Nullable, with no « other » case: an unusual room stays untyped rather than
+  carrying a wrong type. No icon is exposed — that is a client decision, and the two clients don't share an icon set.
+- `room` on `InventoryItem` and `Work`, both optional. Deleting a room detaches them (`ON DELETE SET NULL`) instead of
+  failing.
+- `App\Validator\RoomBelongsToProperty` — a room must belong to the same property as the resource referencing it. A user
+  who is a member of two properties could otherwise write an inconsistent pair, since both IRIs resolve for them.
+- `app:rooms:import-from-categories` — backfills rooms from legacy categories, per property. Idempotent, with
+  `--dry-run` and `--property=<slug>`.
+- `bin/check-property-scope.sh` covers rooms: manager-only writes, and the three paths of the room/property consistency
+  check.
+
+### Changed
+
+- `InventoryItem.category` is now nullable and **deprecated**, superseded by `room`. The real categories in the database
+  (« Cuisine », « Chambre », « Salle de bain ») were rooms all along, but `Category` is deliberately shared across
+  properties and therefore cannot be split per property. It stays writable until both clients ship, then goes away in
+  the next major.
+- `Category` keeps its role on `ShoppingItem`, where a shared aisle across properties makes sense.
+- `InventoryItem.location` is unchanged. It never was the room: it is the spot *inside* the room (« placard du
+  haut »), and it stays exactly as it is.
+- `bin/check-property-scope.sh` reads its base URL from `$API`, so it can run against a plain HTTP server when the local
+  TLS certificate isn't installed.
+
+### Migration
+
+`Version20260812091248` creates the `room` table, adds a nullable `room_id` to `inventory_item` and `work`, **backfills
+the rooms**, and only then relaxes `inventory_item.category_id` to nullable.
+
+The backfill is done in the migration rather than in the command on purpose: extracting it would leave a production
+inventory entirely room-less between `migrate` and the command's first run. One room is created per
+`(property, category.name)` pair actually in use — never per `category.id`, since a single shared category must yield a
+distinct room in each property. Categories used only for shopping (« Épicerie », « Produits frais ») create no room.
+
+Order matters: relaxing `category_id` before the backfill would leave orphaned items with no way to reclassify them.
+
+`app:rooms:import-from-categories` remains useful afterwards, and should be re-run during the transition window: mobile
+builds that predate the feature keep creating items with a category and no room.
+
+`down()` rebuilds `category_id` by joining on the room name, then **deletes** the items it cannot reclassify — an item
+filed under « Chambre 2 » has no matching category and the column becomes `NOT NULL` again. That is the rollback's only
+assumed data loss.
+
 ## [2.0.0] - 2026-08-11
 
 ### Added

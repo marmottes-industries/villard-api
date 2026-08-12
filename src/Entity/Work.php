@@ -14,12 +14,13 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
-use App\Contract\PropertyScopedInterface;
+use App\Contract\RoomScopedInterface;
 use App\Enum\WorkPriority;
 use App\Enum\WorkStatus;
 use App\Enum\WorkType;
 use App\Repository\WorkRepository;
 use App\State\WorkProcessor;
+use App\Validator\RoomBelongsToProperty;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -52,6 +53,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 )]
 #[ApiFilter(SearchFilter::class, properties: [
     'property' => 'exact',
+    'room' => 'exact',
     'title' => 'ipartial',
     'description' => 'ipartial',
     'author.uuid' => 'exact',
@@ -62,7 +64,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(DateFilter::class, properties: ['createdAt', 'scheduledFor'])]
 #[ApiFilter(OrderFilter::class, properties: ['createdAt', 'scheduledFor', 'priority', 'status'], arguments: ['orderParameterName' => 'order'])]
 #[ORM\Entity(repositoryClass: WorkRepository::class)]
-class Work implements PropertyScopedInterface
+#[RoomBelongsToProperty]
+class Work implements RoomScopedInterface
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -98,6 +101,15 @@ class Work implements PropertyScopedInterface
     #[ORM\ManyToOne]
     #[ORM\JoinColumn(nullable: false)]
     private ?Property $property = null;
+
+    /**
+     * Pièce concernée par les travaux, quand ils sont localisés — « refaire le
+     * joint de douche ». Nullable : beaucoup de travaux portent sur le logement
+     * entier.
+     */
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(onDelete: 'SET NULL')]
+    private ?Room $room = null;
 
     #[ApiProperty(writable: false)]
     #[ORM\Column]
@@ -190,6 +202,18 @@ class Work implements PropertyScopedInterface
     public function setProperty(?Property $property): static
     {
         $this->property = $property;
+
+        return $this;
+    }
+
+    public function getRoom(): ?Room
+    {
+        return $this->room;
+    }
+
+    public function setRoom(?Room $room): static
+    {
+        $this->room = $room;
 
         return $this;
     }

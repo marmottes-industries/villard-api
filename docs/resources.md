@@ -7,20 +7,22 @@ Référence des entités exposées par API Platform. Toutes les routes sont pré
 ## Conventions
 
 - **Pluralisation des URLs** : convention API Platform en snake_case anglais.
-  `Category → /api/categories`, `InventoryItem → /api/inventory_items`, `ShoppingItem → /api/shopping_items`, `Note → /api/notes`, `Occupation → /api/occupations`, `Work → /api/works`, `User → /api/users`, `Property → /api/properties`, `PropertyMember → /api/property_members`.
+  `Category → /api/categories`, `Room → /api/rooms`, `InventoryItem → /api/inventory_items`, `ShoppingItem → /api/shopping_items`, `Note → /api/notes`, `Occupation → /api/occupations`, `Work → /api/works`, `User → /api/users`, `Property → /api/properties`, `PropertyMember → /api/property_members`.
 - **Identifiants URL** : `id` numérique auto-incrémenté (sauf l'UUID interne du `User`, utilisé pour le JWT mais pas dans les URLs).
 - **Relations en écriture** : passer l'IRI (`"/api/categories/1"`), pas un id nu ni un objet imbriqué.
 - **PATCH** : `Content-Type: application/merge-patch+json` obligatoire (sinon 415).
 
 ## Cloisonnement par logement
 
-Les cinq ressources métier — `Occupation`, `Work`, `InventoryItem`, `ShoppingItem`, `Note` — sont rattachées à un **logement** (`Property`) et cloisonnées côté serveur. Trois conséquences pour un client :
+Les six ressources métier — `Occupation`, `Work`, `InventoryItem`, `ShoppingItem`, `Note`, `Room` — sont rattachées à un **logement** (`Property`) et cloisonnées côté serveur. Trois conséquences pour un client :
 
 1. **Aucun filtre à envoyer pour être en sécurité.** `GET /api/notes` ne renvoie déjà que les notes des logements dont l'utilisateur est membre. Le paramètre `?property=<IRI>` sert uniquement à restreindre à un logement précis (le logement actif du sélecteur), jamais à élargir : une IRI forgée sur un logement non autorisé renvoie une collection vide.
 2. **Les items d'un autre logement n'existent pas.** `GET /api/notes/42` sur une note d'un logement non autorisé renvoie `404`, pas `403` — la ressource est masquée avant même le contrôle de sécurité, ce qui évite de confirmer son existence. Idem quand une telle IRI apparaît dans un payload d'écriture : la réponse est `400 Item not found`.
 3. **Le champ `property` est requis en création**, avec un repli : si le payload l'omet et que l'utilisateur n'est membre que d'un seul logement, celui-ci est appliqué automatiquement (compatibilité des builds mobiles antérieurs). Au-delà d'un logement, la réponse est `422` avec un message explicite.
 
-`Category` reste **commune à tous les logements** : c'est un choix assumé, la même arborescence sert partout et un renommage impacte tout le monde.
+`Category` reste **commune à tous les logements**, mais son usage s'est réduit aux **courses** : un rayon (« Épicerie », « Produits frais ») se partage légitimement entre logements. L'inventaire, lui, est passé aux `Room`, propres à chaque logement — c'est la seule façon d'avoir deux chambres distinctes ici et une seule ailleurs. `InventoryItem.category` survit en nullable le temps que les clients basculent, et disparaîtra à la prochaine majeure.
+
+Ne pas confondre les deux niveaux de rangement d'un article : `room` dit **dans quelle pièce**, `location` (texte libre, inchangé) dit **où dans cette pièce** — « placard du haut », « sous le lit ».
 
 Le cloisonnement est appliqué par `App\Doctrine\PropertyScopeExtension` (lectures) et `App\Security\Voter\PropertyVoter` (écritures) ; voir [`architecture.md`](architecture.md#cloisonnement-multi-logements) et [`authentication.md`](authentication.md#rôles-locaux-et-propertyvoter).
 
@@ -34,6 +36,7 @@ Dans le tableau, `MEMBRE` et `GESTIONNAIRE` désignent les attributs `PROPERTY_C
 |-----------|----------------|----------|------|-------------|--------|
 | **User** (`/api/users`) | `ROLE_USER` | `ROLE_USER` | `ROLE_ADMIN` | `ROLE_ADMIN` **ou** `object == user` | `ROLE_ADMIN` |
 | **Category** (`/api/categories`) | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` | `ROLE_USER` |
+| **Room** (`/api/rooms`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `GESTIONNAIRE` | `GESTIONNAIRE` (avant **et** après) | `GESTIONNAIRE` |
 | **Property** (`/api/properties`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `ROLE_ADMIN` | `GESTIONNAIRE` | `ROLE_ADMIN` |
 | **PropertyMember** (`/api/property_members`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `GESTIONNAIRE` | `GESTIONNAIRE` (avant **et** après) | `GESTIONNAIRE` |
 | **InventoryItem** (`/api/inventory_items`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `MEMBRE` | `MEMBRE` (avant **et** après) | `GESTIONNAIRE` |
@@ -178,6 +181,30 @@ Enum `PropertyRole` (`src/Enum/PropertyRole.php`) :
 
 *Pas de groupes de sérialisation → tous les champs scalaires sont lus/écrits par défaut.*
 
+### Room — `/api/rooms`
+
+Pièce d'un logement — « Chambre 1 », « Salle de bain étage », « Cabane à skis ». Support du rangement de l'inventaire et de la localisation des travaux.
+
+| Champ | Type | Contraintes |
+|-------|------|-------------|
+| `id` | int | — |
+| `name` | string (255) | requis — unique dans le logement |
+| `type` | `App\Enum\RoomType` | optionnel |
+| `position` | int | défaut 0 — ordre d'affichage décidé par le gestionnaire |
+| `archived` | bool | défaut `false` |
+| `property` | IRI Property | **requis** — cf. [Cloisonnement par logement](#cloisonnement-par-logement) |
+
+Enum `RoomType` (`src/Enum/RoomType.php`) : `kitchen` (Cuisine), `bathroom` (Salle de bain), `toilet` (WC), `bedroom` (Chambre), `living_room` (Salon), `office` (Bureau), `laundry` (Buanderie), `hallway` (Couloir), `garage` (Garage), `cellar` (Cave), `attic` (Combles), `outdoor` (Extérieur).
+
+Volontairement sans valeur « autre » : le champ est nullable, et une pièce atypique reste sans type plutôt que d'en porter un faux. Aucune icône n'est exposée — c'est une décision d'interface, et les deux clients n'ont pas le même jeu disponible.
+
+Deux points qui distinguent cette ressource des cinq autres ressources métier :
+
+- **Les écritures exigent le `GESTIONNAIRE`**, pas le simple membre : la structure d'un logement n'est pas modifiable par ses occupants. Le `POST` ne tolère donc **pas** un `property` nul, contrairement aux ressources historiques — l'échappatoire y existe pour les builds mobiles antérieurs au multi-logements, et aucun client installé ne poste de pièce. La conserver dégraderait silencieusement le contrôle en `MEMBRE`.
+- **Supprimer une pièce ne supprime pas ce qui s'y trouve** : les articles et travaux rattachés sont détachés (`ON DELETE SET NULL`) et se retrouvent sans pièce.
+
+*Pas de groupes de sérialisation → tous les champs scalaires sont lus/écrits par défaut.*
+
 ### InventoryItem — `/api/inventory_items`
 
 Inventaire de l'appartement.
@@ -187,10 +214,11 @@ Inventaire de l'appartement.
 | `id` | int | — |
 | `name` | string (255) | requis |
 | `quantity` | int | défaut 1 |
-| `category` | IRI Category | **requis** (`JoinColumn(nullable: false)`) |
+| `room` | IRI Room | optionnel — pièce du logement ; doit appartenir au même logement que l'article |
+| `category` | IRI Category | optionnel — **déprécié**, remplacé par `room`, retiré à la prochaine majeure |
 | `state` | `App\Enum\State` (`ok` / `worn` / `replace`) | défaut `ok` |
 | `note` | string (255) | optionnel |
-| `location` | string (255) | optionnel |
+| `location` | string (255) | optionnel — précision **à l'intérieur** de la pièce (« placard du haut »), pas la pièce elle-même |
 | `property` | IRI Property | **requis** — cf. [Cloisonnement par logement](#cloisonnement-par-logement) ; auto-rempli en `POST` si l'utilisateur n'a qu'un logement |
 
 Enum `State` (`src/Enum/State.php`) :
@@ -258,6 +286,7 @@ Travaux à réaliser dans l'appartement (bricolage / prestation pro). Suivi de c
 | `completedAt` | datetime | **auto-rempli côté serveur dès que `status` passe à `done`** si non fourni (toutes opérations) |
 | `estimatedCost` | int | optionnel — en euros |
 | `actualCost` | int | optionnel — en euros |
+| `room` | IRI Room | optionnel — pièce concernée ; doit appartenir au même logement que les travaux |
 | `property` | IRI Property | **requis** — cf. [Cloisonnement par logement](#cloisonnement-par-logement) ; auto-rempli en `POST` si l'utilisateur n'a qu'un logement |
 
 Enum `WorkStatus` (`src/Enum/WorkStatus.php`) :
@@ -317,11 +346,12 @@ Booléen accepté en `true` / `false` (ou `1` / `0`) : `?purchased=false`.
 | **Category** | `name` (ipartial) | — | `name` | — |
 | **Property** | `name` (ipartial), `slug` (exact), `city` (ipartial) | — | `name`, `city` | `BooleanFilter` sur `archived` |
 | **PropertyMember** | `property` (exact), `user` (exact), `user.uuid` (exact), `role` (exact) | — | — | — |
-| **InventoryItem** | `property` (exact), `name` (ipartial), `category` (exact), `state` (exact), `note` (ipartial), `location` (ipartial) | — | `name`, `quantity`, `state` | — |
+| **Room** | `property` (exact), `name` (ipartial), `type` (exact) | — | `position`, `name` | `BooleanFilter` sur `archived` |
+| **InventoryItem** | `property` (exact), `room` (exact), `name` (ipartial), `category` (exact), `state` (exact), `note` (ipartial), `location` (ipartial) | — | `name`, `quantity`, `state` | — |
 | **ShoppingItem** | `property` (exact), `name` (ipartial), `category` (exact) | — | `name`, `purchased` | `BooleanFilter` sur `purchased` |
 | **Note** | `property` (exact), `title` (ipartial), `content` (ipartial), `author` (exact), `author.uuid` (exact) | `createdAt` | `createdAt`, `title` | — |
 | **Occupation** | `property` (exact), `occupant` (exact), `occupant.uuid` (exact), `notes` (ipartial) | `startDate`, `endDate` | `startDate`, `endDate` | — |
-| **Work** | `property` (exact), `title` (ipartial), `description` (ipartial), `author.uuid` (exact), `status` (exact), `type` (exact), `priority` (exact) | `createdAt`, `scheduledFor` | `createdAt`, `scheduledFor`, `priority`, `status` | — |
+| **Work** | `property` (exact), `room` (exact), `title` (ipartial), `description` (ipartial), `author.uuid` (exact), `status` (exact), `type` (exact), `priority` (exact) | `createdAt`, `scheduledFor` | `createdAt`, `scheduledFor`, `priority`, `status` | — |
 
 ### Exemples
 

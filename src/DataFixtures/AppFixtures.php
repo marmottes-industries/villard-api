@@ -8,11 +8,13 @@ use App\Entity\Note;
 use App\Entity\Occupation;
 use App\Entity\Property;
 use App\Entity\PropertyMember;
+use App\Entity\Room;
 use App\Entity\ShoppingItem;
 use App\Entity\User;
 use App\Entity\Work;
 use App\Enum\AccentColor;
 use App\Enum\PropertyRole;
+use App\Enum\RoomType;
 use App\Enum\State;
 use App\Enum\WorkPriority;
 use App\Enum\WorkStatus;
@@ -45,11 +47,12 @@ class AppFixtures extends Fixture
         $this->loadMemberships($manager, $users, $properties);
 
         $categories = $this->loadCategories($manager);
-        $this->loadInventoryItems($manager, $categories, $properties);
+        $rooms = $this->loadRooms($manager, $properties);
+        $this->loadInventoryItems($manager, $categories, $rooms, $properties);
         $this->loadShoppingItems($manager, $categories, $properties);
         $this->loadOccupations($manager, $users, $properties);
         $this->loadNotes($manager, $users, $properties);
-        $this->loadWorks($manager, $users, $properties);
+        $this->loadWorks($manager, $users, $rooms, $properties);
 
         $manager->flush();
     }
@@ -164,10 +167,59 @@ class AppFixtures extends Fixture
     }
 
     /**
-     * @param array<string, Category> $categories
+     * Les pièces reproduisent exactement ce que la reprise SQL de
+     * {@see \DoctrineMigrations\Version20260812091248} produit sur ces mêmes
+     * fixtures : c'est le seul moyen de valider la migration sans base de
+     * production.
+     *
      * @param array<string, Property> $properties
+     *
+     * @return array<string, array<string, Room>> slug du logement → nom de pièce → pièce
      */
-    private function loadInventoryItems(ObjectManager $manager, array $categories, array $properties): void
+    private function loadRooms(ObjectManager $manager, array $properties): array
+    {
+        $definitions = [
+            'les-tennis' => ['Cuisine', 'Salon', 'Chambre', 'Salle de bain', 'Cave', 'Extérieur'],
+            'le-cabanon' => ['Cuisine', 'Chambre', 'Salle de bain', 'Cave', 'Extérieur'],
+        ];
+
+        $types = [
+            'Cuisine' => RoomType::KITCHEN,
+            'Salon' => RoomType::LIVING_ROOM,
+            'Chambre' => RoomType::BEDROOM,
+            'Salle de bain' => RoomType::BATHROOM,
+            'Cave' => RoomType::CELLAR,
+            'Extérieur' => RoomType::OUTDOOR,
+        ];
+
+        $rooms = [];
+        foreach ($definitions as $slug => $names) {
+            foreach ($names as $position => $name) {
+                $room = new Room();
+                $room->setName($name);
+                $room->setType($types[$name]);
+                $room->setPosition($position);
+                $room->setProperty($properties[$slug]);
+                $manager->persist($room);
+                $rooms[$slug][$name] = $room;
+            }
+        }
+
+        return $rooms;
+    }
+
+    /**
+     * Chaque article reçoit sa pièce **et** conserve sa catégorie : c'est
+     * l'état exact de la base après migration en production, tant que les
+     * clients déjà installés continuent d'écrire `category`. Le paramètre
+     * `$categories` et l'appel à `setCategory()` disparaîtront avec la colonne,
+     * à la prochaine majeure.
+     *
+     * @param array<string, Category>              $categories
+     * @param array<string, array<string, Room>>   $rooms
+     * @param array<string, Property>              $properties
+     */
+    private function loadInventoryItems(ObjectManager $manager, array $categories, array $rooms, array $properties): void
     {
         $items = [
             'les-tennis' => [
@@ -187,13 +239,14 @@ class AppFixtures extends Fixture
             ],
         ];
 
-        foreach ($items as $slug => $byCategory) {
-            foreach ($byCategory as $categoryName => $list) {
+        foreach ($items as $slug => $byRoom) {
+            foreach ($byRoom as $roomName => $list) {
                 foreach ($list as [$name, $quantity]) {
                     $item = new InventoryItem();
                     $item->setName($name);
                     $item->setQuantity($quantity);
-                    $item->setCategory($categories[$categoryName]);
+                    $item->setRoom($rooms[$slug][$roomName]);
+                    $item->setCategory($categories[$roomName]);
                     $item->setState(State::OK);
                     $item->setProperty($properties[$slug]);
                     $manager->persist($item);
@@ -294,23 +347,27 @@ class AppFixtures extends Fixture
     }
 
     /**
-     * @param array<string, User>     $users
-     * @param array<string, Property> $properties
+     * @param array<string, User>                $users
+     * @param array<string, array<string, Room>> $rooms
+     * @param array<string, Property>            $properties
      */
-    private function loadWorks(ObjectManager $manager, array $users, array $properties): void
+    private function loadWorks(ObjectManager $manager, array $users, array $rooms, array $properties): void
     {
+        // Le dernier travail reste sans pièce : les deux branches doivent être
+        // exercées côté clients.
         $works = [
-            ['antonin', 'les-tennis', 'Remplacer le ballon d\'eau chaude',       WorkStatus::PLANNED,     WorkType::PRO, WorkPriority::HIGH,   1200],
-            ['sophie',  'les-tennis', 'Repeindre la chambre du fond',            WorkStatus::SUGGESTED,   WorkType::DIY, WorkPriority::LOW,     300],
-            ['pierre',  'les-tennis', 'Réviser la chaudière',                    WorkStatus::DONE,        WorkType::PRO, WorkPriority::MEDIUM,  180],
-            ['marie',   'le-cabanon', 'Reprendre l\'étanchéité de la terrasse',  WorkStatus::IN_PROGRESS, WorkType::PRO, WorkPriority::HIGH,   2500],
-            ['lucas',   'le-cabanon', 'Installer une douche extérieure',         WorkStatus::SUGGESTED,   WorkType::DIY, WorkPriority::LOW,     450],
+            ['antonin', 'les-tennis', 'Salle de bain', 'Remplacer le ballon d\'eau chaude',       WorkStatus::PLANNED,     WorkType::PRO, WorkPriority::HIGH,   1200],
+            ['sophie',  'les-tennis', 'Chambre',       'Repeindre la chambre du fond',            WorkStatus::SUGGESTED,   WorkType::DIY, WorkPriority::LOW,     300],
+            ['pierre',  'les-tennis', 'Cave',          'Réviser la chaudière',                    WorkStatus::DONE,        WorkType::PRO, WorkPriority::MEDIUM,  180],
+            ['marie',   'le-cabanon', 'Extérieur',     'Reprendre l\'étanchéité de la terrasse',  WorkStatus::IN_PROGRESS, WorkType::PRO, WorkPriority::HIGH,   2500],
+            ['lucas',   'le-cabanon', null,            'Installer une douche extérieure',         WorkStatus::SUGGESTED,   WorkType::DIY, WorkPriority::LOW,     450],
         ];
 
-        foreach ($works as [$username, $slug, $title, $status, $type, $priority, $cost]) {
+        foreach ($works as [$username, $slug, $roomName, $title, $status, $type, $priority, $cost]) {
             $work = new Work();
             $work->setAuthor($users[$username]);
             $work->setProperty($properties[$slug]);
+            $work->setRoom(null === $roomName ? null : $rooms[$slug][$roomName]);
             $work->setTitle($title);
             $work->setStatus($status);
             $work->setType($type);

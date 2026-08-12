@@ -120,7 +120,7 @@ Voir la matrice de permissions par ressource ci-dessous.
 
 ### 2.5 Logements et cloisonnement — à lire avant de coder un client
 
-Toutes les données métier (`Occupation`, `Work`, `InventoryItem`, `ShoppingItem`, `Note`) appartiennent à un **logement** (`Property`). Le serveur cloisonne, le client n'a rien à sécuriser :
+Toutes les données métier (`Occupation`, `Work`, `InventoryItem`, `ShoppingItem`, `Note`, `Room`) appartiennent à un **logement** (`Property`). Le serveur cloisonne, le client n'a rien à sécuriser :
 
 | Situation | Comportement serveur |
 |-----------|----------------------|
@@ -134,7 +134,9 @@ Toutes les données métier (`Occupation`, `Work`, `InventoryItem`, `ShoppingIte
 
 Le repli mono-logement existe pour que les builds mobiles antérieurs continuent de fonctionner. **Un client à jour doit toujours envoyer `property`** en création, et propager `?property=` en lecture.
 
-`Category` est **commune à tous les logements** : la même arborescence sert partout.
+**`Room` fait exception à la ligne « `POST` sans `property` » du tableau** : ses écritures exigent le gestionnaire, et omettre `property` y renvoie `403` au lieu d'appliquer le repli. Cf. §4.11.
+
+`Category` est **commune à tous les logements**, mais ne sert plus qu'aux **courses**. Le rangement de l'inventaire passe par `Room`, propre à chaque logement (§4.11).
 
 `GET /api/me` renvoie les logements de l'utilisateur et son rôle local dans chacun : c'est tout ce qu'il faut pour amorcer un sélecteur de logement, sans second appel. Voir §7.
 
@@ -244,9 +246,11 @@ passe n'est pas modifiable via cet endpoint.
 
 Relations exposées par défaut (JSON-LD) : `inventoryItems`, `shoppingItems` (IRIs).
 
+> `Category` ne sert plus qu'aux **courses**. Sur l'inventaire, elle est remplacée par `Room` (§4.11) : les catégories réellement en base (« Cuisine », « Chambre », « Salle de bain ») étaient des pièces, mais une catégorie est commune à tous les logements et ne peut donc pas se décliner. Ne plus l'envoyer en créant un article.
+
 ### 4.3 InventoryItem — `/api/inventory_items`
 
-Inventaire de l'appartement. `category` est **obligatoire**.
+Inventaire de l'appartement.
 
 | Op                      | Sécurité                                       |
 |-------------------------|------------------------------------------------|
@@ -260,7 +264,8 @@ Inventaire de l'appartement. `category` est **obligatoire**.
     "id": 12,
     "name": "Casseroles",
     "quantity": 3,
-    "category": "/api/categories/1",
+    "room": "/api/rooms/4",
+    "category": null,
     "state": "ok",
     "note": "Une casserole a perdu son manche",
     "location": "Placard sous l'évier",
@@ -270,11 +275,14 @@ Inventaire de l'appartement. `category` est **obligatoire**.
 
 Champs :
 
-- `category` (IRI, **requis**) — passer la catégorie en IRI (`"/api/categories/1"`), convention API Platform.
+- `room` (IRI Room, optionnel) — la pièce où se trouve l'article (cf. §4.11). Elle **doit** appartenir au même logement que l'article, sinon `422`.
+- `category` (IRI, optionnel) — **déprécié**, remplacé par `room`. Encore accepté le temps que les clients basculent, retiré à la prochaine majeure. Ne plus l'envoyer.
 - `state` (enum, défaut `"ok"`) — valeurs possibles : `"ok"` (Bon état), `"worn"` (Abimé), `"replace"` (À remplacer).
 - `note` (string, optionnel) — précision libre sur l'item (jusqu'à 255 caractères).
-- `location` (string, optionnel) — emplacement physique dans le logement (255 caractères).
+- `location` (string, optionnel) — **inchangé**, et à ne pas confondre avec `room` : `room` dit dans quelle pièce, `location` dit où **dans** cette pièce (« placard du haut », « sous le lit »). 255 caractères.
 - `property` (IRI Property, **requis**) — le logement. Auto-rempli en `POST` si l'utilisateur n'en a qu'un (cf. §2.5).
+
+> Un article peut n'avoir **aucune** pièce (`room: null`) : c'est le cas de ceux créés par un client pas encore à jour, et de ceux dont la pièce a été supprimée. Prévoir un groupe « Sans pièce » dans les listes, sans quoi ces articles disparaissent silencieusement de l'affichage.
 
 ### 4.4 ShoppingItem — `/api/shopping_items`
 
@@ -377,6 +385,7 @@ priorisation et chiffrage estimé / réel.
     "priority": "medium",
     "author": "/api/users/2",
     "property": "/api/properties/1",
+    "room": "/api/rooms/6",
     "createdAt": "2026-06-09T09:30:00+00:00",
     "scheduledFor": "2026-07-12",
     "completedAt": null,
@@ -394,6 +403,7 @@ Champs :
 - `priority` (enum, optionnel) : `"low"`, `"medium"`, `"high"`.
 - `author` (IRI User, **requis**) — auto-rempli avec l'utilisateur courant en `POST` si omis.
 - `property` (IRI Property, **requis**) — le logement. Auto-rempli en `POST` si l'utilisateur n'en a qu'un (cf. §2.5).
+- `room` (IRI Room, optionnel) — pièce concernée, quand les travaux sont localisés (cf. §4.11). Beaucoup portent sur le logement entier et restent à `null`. Elle **doit** appartenir au même logement que les travaux, sinon `422`.
 - `createdAt` (datetime, ISO 8601) — **auto-rempli côté serveur à la création**, lecture seule.
 - `scheduledFor` (date, `YYYY-MM-DD`, optionnel) — date prévue.
 - `completedAt` (datetime, optionnel) — **auto-rempli côté serveur dès que `status` passe à `"done"`** si non fourni
@@ -542,6 +552,43 @@ Pas de `PUT`.
 
 - `role` (enum, défaut `"occupant"`) : `"manager"` ou `"occupant"`.
 - Contrainte d'unicité sur `(property, user)` : un utilisateur n'a qu'un rôle par logement. Un doublon renvoie `422`.
+
+### 4.11 Room — `/api/rooms`
+
+Pièce d'un logement — « Chambre 1 », « Salle de bain étage », « Cabane à skis ». Remplace `Category` sur l'inventaire et localise les travaux.
+
+| Op                 | Sécurité                                          |
+|--------------------|---------------------------------------------------|
+| GET collection     | `ROLE_USER` — cloisonné par logement (cf. §2.5)   |
+| GET item           | membre du logement                                |
+| POST               | **gestionnaire** du logement visé                 |
+| PUT / PATCH        | **gestionnaire** du logement (avant **et** après) |
+| DELETE             | **gestionnaire** du logement                      |
+
+```json
+{
+    "id": 4,
+    "name": "Chambre parents",
+    "type": "bedroom",
+    "position": 2,
+    "archived": false,
+    "property": "/api/properties/1"
+}
+```
+
+Champs :
+
+- `name` (string, **requis**) — libre, jusqu'à 255 caractères. Unique dans le logement : un doublon renvoie `422`.
+- `type` (enum, optionnel) — `"kitchen"` (Cuisine), `"bathroom"` (Salle de bain), `"toilet"` (WC), `"bedroom"` (Chambre), `"living_room"` (Salon), `"office"` (Bureau), `"laundry"` (Buanderie), `"hallway"` (Couloir), `"garage"` (Garage), `"cellar"` (Cave), `"attic"` (Combles), `"outdoor"` (Extérieur). Pas de valeur « autre » : une pièce atypique reste `null`.
+- `position` (int, défaut 0) — ordre d'affichage décidé par le gestionnaire. **Trier dessus, pas alphabétiquement** : « Chambre 10 » passerait avant « Chambre 2 ».
+- `archived` (bool, défaut `false`).
+- `property` (IRI Property, **requis**).
+
+Trois points à connaître avant de coder un client :
+
+1. **Aucune icône n'est exposée.** C'est une décision d'interface, et le web et le mobile n'ont pas le même jeu disponible : dériver l'icône du `type` côté client, avec un repli pour `null`.
+2. **Le `POST` n'auto-remplit pas `property`.** Contrairement aux autres ressources, l'omettre renvoie `403` et non un repli mono-logement : l'échappatoire n'existe ailleurs que pour les anciens builds mobiles, et la conserver ici dégraderait le contrôle « gestionnaire » en « membre ». Toujours envoyer `property`.
+3. **Supprimer une pièce ne supprime rien d'autre.** Les articles et travaux rattachés sont détachés (`room` repasse à `null`) et restent visibles dans leur logement.
 
 ---
 
@@ -820,13 +867,14 @@ paramètres se combinent en AND.
 | Ressource       | Search                                                                                           | Date                   | Order                       | Booléen     |
 |-----------------|--------------------------------------------------------------------------------------------------|------------------------|-----------------------------|-------------|
 | `Category`      | `name` (ipartial)                                                                                | —                      | `name`                      | —           |
+| `Room`          | `property` (exact), `name` (ipartial), `type` (exact)                                            | —                      | `position`, `name`          | `archived`  |
 | `Property`      | `name` (ipartial), `slug` (exact), `city` (ipartial)                                             | —                      | `name`, `city`              | `archived`  |
 | `PropertyMember`| `property` (exact), `user` (exact), `user.uuid` (exact), `role` (exact)                          | —                      | —                           | —           |
-| `InventoryItem` | `property` (exact), `name` (ipartial), `category` (exact), `state` (exact), `note` (ipartial), `location` (ipartial) | —                      | `name`, `quantity`, `state` | —           |
+| `InventoryItem` | `property` (exact), `room` (exact), `name` (ipartial), `category` (exact), `state` (exact), `note` (ipartial), `location` (ipartial) | —                      | `name`, `quantity`, `state` | —           |
 | `ShoppingItem`  | `property` (exact), `name` (ipartial), `category` (exact)                                                            | —                      | `name`, `purchased`         | `purchased` |
 | `Note`          | `property` (exact), `title` (ipartial), `content` (ipartial), `author` (exact), `author.uuid` (exact)                | `createdAt`            | `createdAt`, `title`        | —           |
 | `Occupation`    | `property` (exact), `occupant` (exact), `occupant.uuid` (exact), `notes` (ipartial)                                  | `startDate`, `endDate` | `startDate`, `endDate`      | —           |
-| `Work`          | `property` (exact), `title` (ipartial), `description` (ipartial), `author.uuid` (exact), `status` (exact), `type` (exact), `priority` (exact) | `createdAt`, `scheduledFor` | `createdAt`, `scheduledFor`, `priority`, `status` | —           |
+| `Work`          | `property` (exact), `room` (exact), `title` (ipartial), `description` (ipartial), `author.uuid` (exact), `status` (exact), `type` (exact), `priority` (exact) | `createdAt`, `scheduledFor` | `createdAt`, `scheduledFor`, `priority`, `status` | —           |
 
 ### Exemples
 
