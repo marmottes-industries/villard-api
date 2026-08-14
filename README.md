@@ -54,6 +54,10 @@ git clone <url-du-depot> villard-api
 cd villard-api
 composer install
 
+# 0. Configuration (le .env n'est pas versionné)
+cp .env.example .env
+# puis renseigner APP_SECRET, JWT_PASSPHRASE et APP_CRON_SECRET
+
 # 1. DB (auto-démarrée si tu utilises symfony server:start)
 docker compose up -d
 
