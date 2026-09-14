@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-15
+
 ### Added
 
 - `Image` (`/api/images`) — photos attached to a `Note` or a `Work`, up to 10 per parent. `POST` in
@@ -160,7 +162,8 @@ assumed data loss.
 
 - Initial release.
 
-[unreleased]: https://github.com/marmottes-industries/villard-api/compare/v2.1.0...main
+[unreleased]: https://github.com/marmottes-industries/villard-api/compare/v2.2.0...main
+[2.2.0]: https://github.com/marmottes-industries/villard-api/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/marmottes-industries/villard-api/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/marmottes-industries/villard-api/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/marmottes-industries/villard-api/compare/v1.2.1...v1.3.0
