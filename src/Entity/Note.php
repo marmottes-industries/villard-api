@@ -17,6 +17,8 @@ use ApiPlatform\Metadata\Put;
 use App\Contract\PropertyScopedInterface;
 use App\Repository\NoteRepository;
 use App\State\NoteProcessor;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -90,6 +92,24 @@ class Note implements PropertyScopedInterface
     #[ORM\JoinColumn(nullable: false)]
     private ?Property $property = null;
 
+    /**
+     * Photos jointes, embarquées en lecture (`readableLink`) avec leur URL
+     * signée. Elles s'ajoutent et se retirent par `/api/images`, jamais par
+     * cette propriété. La cascade ORM `remove` est ce qui efface les fichiers
+     * à la suppression du parent, cf. {@see \App\Doctrine\ImageFileRemover}.
+     *
+     * @var Collection<int, Image>
+     */
+    #[ORM\OneToMany(targetEntity: Image::class, mappedBy: 'note', cascade: ['remove'], orphanRemoval: true)]
+    #[ORM\OrderBy(['createdAt' => 'ASC', 'id' => 'ASC'])]
+    #[ApiProperty(readableLink: true, writable: false)]
+    private Collection $images;
+
+    public function __construct()
+    {
+        $this->images = new ArrayCollection();
+    }
+
     public function getId(): ?int
     {
         return $this->id;
@@ -151,6 +171,33 @@ class Note implements PropertyScopedInterface
     public function setAuthor(?User $author): static
     {
         $this->author = $author;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Image>
+     */
+    public function getImages(): Collection
+    {
+        return $this->images;
+    }
+
+    public function addImage(Image $image): static
+    {
+        if (!$this->images->contains($image)) {
+            $this->images->add($image);
+            $image->setNote($this);
+        }
+
+        return $this;
+    }
+
+    public function removeImage(Image $image): static
+    {
+        if ($this->images->removeElement($image) && $image->getNote() === $this) {
+            $image->setNote(null);
+        }
 
         return $this;
     }

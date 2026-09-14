@@ -15,6 +15,9 @@ parameters:
     app.mailer.from_name: '%env(MAILER_FROM_NAME)%'
     app.web_url: '%env(APP_WEB_URL)%'
     app.cron.secret: '%env(APP_CRON_SECRET)%'
+    # Défaut si IMAGE_STORAGE_DIR est absent : sans lui, un .env de prod
+    # incomplet casserait le conteneur au démarrage, pas seulement l'upload.
+    env(IMAGE_STORAGE_DIR): '%kernel.project_dir%/var/storage/images'
     # Les coordonnées météo sont portées par chaque Property, plus par la
     # configuration : voir src/Weather/OpenMeteoClient.php.
 

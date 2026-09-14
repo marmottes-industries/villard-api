@@ -45,6 +45,9 @@ security:
         - { path: ^/api/docs, roles: PUBLIC_ACCESS }
         - { path: ^/api/app/version, roles: PUBLIC_ACCESS }
         - { path: ^/api/cron, roles: PUBLIC_ACCESS }
+        # Fichiers d'images : l'accès est autorisé par l'URL signée, pas par un JWT
+        # (cf. App\Controller\ImageFileController).
+        - { path: ^/api/images/\d+/file$, roles: PUBLIC_ACCESS }
         - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }
 
 when@test:

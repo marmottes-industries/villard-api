@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Image` (`/api/images`) — photos attached to a `Note` or a `Work`, up to 10 per parent. `POST` in
+  `multipart/form-data` (`file` + `note` or `work` IRI) and `DELETE`, both under the parent's `PATCH` rule: the
+  property's manager, or the parent's author. No `GET`: images are read embedded in the parent.
+- `images` on `Note` and `Work`, read-only, embedded with `mimeType`, `size`, `width`, `height`, `createdAt` and `url`.
+- Server-side compression with GD: above 1 MB, an image is rotated according to its EXIF orientation, resized to
+  2048 px on its longest side and re-encoded as JPEG quality 82. JPEG, PNG and WebP are accepted, up to 15 MB and
+  50 megapixels. HEIC is rejected.
+- `GET /api/images/{id}/file` — serves the file behind a signed, expiring path (`url`), with no JWT: an `<img>` tag
+  cannot send one. The signature stays identical for the day so HTTP caches keep working.
+- Deleting a note, a work or an image deletes its files from disk, after the transaction commits.
+- `IMAGE_STORAGE_DIR` — storage directory, defaults to `var/storage/images`. In production, keep it outside the
+  repository and include it in backups.
+- `ext-gd`, `ext-exif` and `ext-fileinfo` are now required in `composer.json`.
+
+### Deployment
+
+- Raise PHP's `upload_max_filesize` (≥ 16M) and `post_max_size` (≥ 20M) before shipping clients that upload photos.
+
 ## [2.1.0] - 2026-08-12
 
 ### Added

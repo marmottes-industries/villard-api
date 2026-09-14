@@ -64,6 +64,20 @@ En production, restreindre `CORS_ALLOW_ORIGIN` à la regex exacte des domaines d
 
 Génération des clés : voir [`authentication.md`](authentication.md#génération-des-clés).
 
+### Images
+
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `IMAGE_STORAGE_DIR` | `%kernel.project_dir%/var/storage/images` | Dossier de stockage des photos jointes aux notes et travaux. Défaut posé dans `config/services.yaml` : un `.env` qui l'omet ne casse pas le démarrage. |
+
+En prod, trois réglages à faire une fois :
+
+- **`IMAGE_STORAGE_DIR` hors du dépôt** (le déploiement fait un `git checkout` dans le dossier de l'API), inscriptible par l'utilisateur PHP, et **inclus dans les sauvegardes** au même titre que la base.
+- **Limites PHP** : `upload_max_filesize` ≥ 16M et `post_max_size` ≥ 20M. Les valeurs par défaut (2M / 8M) font échouer tout envoi de photo de téléphone : au-delà de `post_max_size`, la requête arrive sans aucun champ et l'API répond `422` « Aucun fichier reçu ».
+- **Extensions** : `gd` (avec JPEG et WebP), `exif`, `fileinfo`. Déclarées dans `composer.json`, donc un `composer install` échoue net si l'une manque.
+
+`memory_limit` est relevé à 512M par `ImageOptimizer` le temps de décoder une grosse photo, sans qu'il soit nécessaire de le changer globalement.
+
 ### MariaDB (dev, via Docker Compose)
 
 `compose.yaml` lit ces variables (avec valeurs par défaut) :
@@ -111,6 +125,7 @@ php bin/console cache:pool:delete cache.app weather_property_1
 ## Notes prod
 
 - Régénérer `JWT_PASSPHRASE` et `APP_SECRET`.
+- Stockage des images : cf. [Images](#images).
 - Restreindre `CORS_ALLOW_ORIGIN`.
 - Monter `config/jwt/` depuis un volume sécurisé (clés non incluses dans l'image Docker).
 - Désactiver les fixtures (bundle déclaré uniquement en `dev` et `test` dans `config/bundles.php`).

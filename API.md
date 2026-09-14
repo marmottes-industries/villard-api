@@ -323,9 +323,24 @@ Liste de courses. `category` est **optionnelle**.
     "content": "1234B",
     "createdAt": "2026-01-15T10:00:00+00:00",
     "author": "/api/users/2",
-    "property": "/api/properties/1"
+    "property": "/api/properties/1",
+    "images": [
+        {
+            "@id": "/api/images/12",
+            "@type": "Image",
+            "id": 12,
+            "mimeType": "image/jpeg",
+            "size": 412733,
+            "width": 1536,
+            "height": 2048,
+            "createdAt": "2026-01-15T10:02:00+00:00",
+            "url": "/api/images/12/file?_expiration=1768608000&_hash=…"
+        }
+    ]
 }
 ```
+
+> `images` (lecture seule) — photos jointes, cf. §4.12. Toujours présent, `[]` si aucune.
 
 > En `POST`, `author` peut être **omis** : le serveur l'assigne à l'utilisateur courant. S'il est fourni, il doit
 > pointer sur l'utilisateur courant (sauf gestionnaire du logement ou admin). **`createdAt` est auto-rempli côté
@@ -390,7 +405,8 @@ priorisation et chiffrage estimé / réel.
     "scheduledFor": "2026-07-12",
     "completedAt": null,
     "estimatedCost": 120,
-    "actualCost": null
+    "actualCost": null,
+    "images": []
 }
 ```
 
@@ -410,6 +426,7 @@ Champs :
   (sur n'importe quelle opération, `POST` comme `PUT`/`PATCH`).
 - `estimatedCost` (int, optionnel) — en euros.
 - `actualCost` (int, optionnel) — en euros.
+- `images` (lecture seule) — photos jointes, cf. §4.12.
 
 > Implémenté via le processor `App\State\WorkProcessor`. À la création (`POST`), il pose `createdAt = now()` et assigne
 > `author = utilisateur courant` si le champ est vide. À chaque écriture (toutes opérations), si `status === "done"` et
@@ -589,6 +606,62 @@ Trois points à connaître avant de coder un client :
 1. **Aucune icône n'est exposée.** C'est une décision d'interface, et le web et le mobile n'ont pas le même jeu disponible : dériver l'icône du `type` côté client, avec un repli pour `null`.
 2. **Le `POST` n'auto-remplit pas `property`.** Contrairement aux autres ressources, l'omettre renvoie `403` et non un repli mono-logement : l'échappatoire n'existe ailleurs que pour les anciens builds mobiles, et la conserver ici dégraderait le contrôle « gestionnaire » en « membre ». Toujours envoyer `property`.
 3. **Supprimer une pièce ne supprime rien d'autre.** Les articles et travaux rattachés sont détachés (`room` repasse à `null`) et restent visibles dans leur logement.
+
+### 4.12 Image — `/api/images`
+
+Photo jointe à une note (§4.5) ou à des travaux (§4.7). Une image appartient à **un seul** parent. Elle se **lit** embarquée dans `images` du parent : il n'existe ni `GET /api/images` ni `GET /api/images/{id}`.
+
+| Op                        | Sécurité                                                                          |
+|---------------------------|-----------------------------------------------------------------------------------|
+| POST `/api/images`        | même règle que le `PATCH` du parent : gestionnaire du logement **ou** auteur du parent |
+| DELETE `/api/images/{id}` | idem                                                                              |
+| GET `url` (fichier)       | **aucun JWT** : l'URL signée fait office d'autorisation                           |
+
+**Envoi** — `multipart/form-data`, une image par requête :
+
+| Champ  | Valeur                                                     |
+|--------|------------------------------------------------------------|
+| `file` | le fichier, **requis**                                     |
+| `note` | IRI de la note (`/api/notes/7`), **ou**                     |
+| `work` | IRI des travaux (`/api/works/5`) — exactement un des deux  |
+
+Réponse `201` : l'image, même forme que dans `images`.
+
+```ts
+const form = new FormData()
+form.append('file', file)
+form.append('note', note['@id'])
+// Écraser le Content-Type JSON par défaut du client : axios pose alors la boundary.
+await apiClient.post('/api/images', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+```
+
+Règles serveur :
+
+- **Formats** : JPEG, PNG, WebP. **HEIC refusé** (`422`) : sur iOS, demander une conversion JPEG au sélecteur de photos.
+- **Taille** : 15 Mo maximum par fichier (`422`), 50 mégapixels maximum.
+- **10 images maximum** par parent (`422`).
+- **Compression** : au-delà de 1 Mo, l'image est redressée selon son orientation EXIF, ramenée à 2048 px sur son plus grand côté et ré-encodée en JPEG. `mimeType`, `size`, `width` et `height` décrivent le fichier **stocké**, pas celui envoyé. Un PNG compressé ressort donc en `image/jpeg`, sur fond blanc.
+- Parent introuvable ou d'un autre logement : `422`.
+
+Champs (tous en lecture seule) :
+
+- `mimeType` (string) — `image/jpeg`, `image/png` ou `image/webp`.
+- `size` (int) — en octets.
+- `width`, `height` (int) — en pixels, dans le sens d'affichage. Utiles pour réserver la place avant chargement.
+- `createdAt` (datetime).
+- `url` (string) — **chemin** signé vers le fichier, à préfixer avec l'URL de l'API.
+
+**Afficher une image** — `url` est un chemin, pas une URL complète :
+
+```ts
+const src = `${env.apiUrl}${image.url}`   // <img :src="src">, <Image source={{ uri: src }} />
+```
+
+- Pas de header `Authorization` à envoyer : une balise `<img>` ne le peut pas, la signature le remplace.
+- La signature **expire** (entre 24 et 48 h). Ne pas persister `url` : la relire depuis le parent. Un `403` sur le fichier veut dire « recharger le parent ».
+- L'URL est **stable sur la journée** : deux lectures du parent le même jour renvoient la même, ce qui laisse le cache navigateur et React Native fonctionner.
+
+**Suppression** — `DELETE /api/images/{id}` efface la ligne et le fichier. Supprimer la note ou les travaux supprime aussi toutes leurs images, fichiers compris.
 
 ---
 

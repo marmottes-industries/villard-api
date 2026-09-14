@@ -78,7 +78,7 @@ Every entity in `src/Entity/` carrying `#[ApiResource]` exposes CRUD under `/api
 
 ### Serialization groups — partially applied
 
-`User` (`user:read` / `user:write`), `Property` (`property:read` / `property:write`) and `PropertyMember` (`member:read` / `member:write`) use serialization groups — `User.password` is in no group and therefore not exposable. **Other entities (Category, Room, InventoryItem, ShoppingItem, Note, Occupation, Work) currently expose all scalar fields by default.** When adding fields to those entities, assume they will be exposed; when adding sensitive fields, introduce groups first.
+`User` (`user:read` / `user:write`), `Property` (`property:read` / `property:write`) and `PropertyMember` (`member:read` / `member:write`) use serialization groups — `User.password` is in no group and therefore not exposable. **Other entities (Category, Room, InventoryItem, ShoppingItem, Note, Occupation, Work, Image) currently expose all scalar fields by default** (`Image` hides its internals with `readable: false` / `#[Ignore]`). When adding fields to those entities, assume they will be exposed; when adding sensitive fields, introduce groups first.
 
 `property:summary` is a cross-cutting group: it is activated *in addition to* `user:read` on the `/api/me` operation so that `memberships` embeds each property instead of an IRI.
 
@@ -103,6 +103,15 @@ Entities that reference a room (`InventoryItem`, `Work`) implement `App\Contract
 
 Processor chain on `Note` and `Work`: `NoteProcessor` / `WorkProcessor` → `PropertyScopeProcessor` → `PersistProcessor`.
 
+### Images (`Image`, `/api/images`)
+
+Photos attached to a `Note` or a `Work`, stored on the server disk (`IMAGE_STORAGE_DIR`, default `var/storage/images`). Details in `docs/resources.md` § Image.
+
+- Only `POST` (multipart, `deserialize: false`) and `DELETE`. Images are **read embedded** in `Note.images` / `Work.images` (`readableLink: true`), so `Image` has no `GET` and does not implement `PropertyScopedInterface`.
+- `ImageUploadProcessor` does what the pipeline can't with `deserialize: false`: resolves the parent IRI (through `PropertyScopeExtension`), checks the parent's `PATCH` rule by hand, validates the file, compresses (`App\Image\ImageOptimizer`, GD: > 1 MB → EXIF orientation, 2048 px, JPEG q82), stores.
+- Files are served by `ImageFileController` (`GET /api/images/{id}/file`, `PUBLIC_ACCESS`) behind a `UriSigner` signature computed on the **path only**. `url` is a relative path clients prefix with their API base URL — an absolute URL would depend on the scheme PHP sees behind a proxy.
+- **File deletion relies on the ORM cascade** (`cascade: ['remove']` on `images`) and `App\Doctrine\ImageFileRemover`, which deletes files in `postFlush`, after commit. Never replace it with a DB-only `ON DELETE CASCADE` (no listener fires), and don't delete files in `postRemove` (still inside the transaction).
+
 ### `GET /api/me`
 
 Implemented via a custom API Platform state provider: `src/State/MeProvider.php`. The route is declared as an operation on the `User` resource and resolves to the currently authenticated user. This is the pattern to follow for other "current-user-scoped" endpoints — don't add a controller.
@@ -116,13 +125,15 @@ src/
 ├── ApiResource/   # resources decoupled from Doctrine entities (WeatherForecast)
 ├── Command/       # console commands (e.g. CreateUserCommand → app:create-user)
 ├── Contract/      # PropertyScopedInterface — marks an entity as property-scoped
-├── Controller/    # nearly empty — API Platform generates everything; avoid adding controllers
+├── Controller/    # nearly empty — API Platform generates everything; avoid adding controllers (ImageFileController streams a binary)
 ├── DataFixtures/  # two properties with disjoint memberships
 ├── Doctrine/      # PropertyScopeExtension — read-side partitioning
 ├── Entity/        # Doctrine entities = API Platform resources
 ├── Enum/          # e.g. State (ok/worn/replace), PropertyRole (manager/occupant)
+├── Image/         # ImageOptimizer (GD compression), ImageStorage (disk)
 ├── Repository/
 ├── Security/Voter/ # PropertyVoter — write-side partitioning
+├── Serializer/    # ImageNormalizer — adds the signed `url`
 └── State/         # API Platform providers/processors (MeProvider, PropertyScopeProcessor)
 ```
 

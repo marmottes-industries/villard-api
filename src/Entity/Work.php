@@ -21,6 +21,8 @@ use App\Enum\WorkType;
 use App\Repository\WorkRepository;
 use App\State\WorkProcessor;
 use App\Validator\RoomBelongsToProperty;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -128,6 +130,24 @@ class Work implements RoomScopedInterface
     #[ORM\Column(nullable: true)]
     #[Assert\PositiveOrZero]
     private ?int $actualCost = null; // in euro
+
+    /**
+     * Photos jointes, embarquées en lecture (`readableLink`) avec leur URL
+     * signée. Elles s'ajoutent et se retirent par `/api/images`, jamais par
+     * cette propriété. La cascade ORM `remove` est ce qui efface les fichiers
+     * à la suppression du parent, cf. {@see \App\Doctrine\ImageFileRemover}.
+     *
+     * @var Collection<int, Image>
+     */
+    #[ORM\OneToMany(targetEntity: Image::class, mappedBy: 'work', cascade: ['remove'], orphanRemoval: true)]
+    #[ORM\OrderBy(['createdAt' => 'ASC', 'id' => 'ASC'])]
+    #[ApiProperty(readableLink: true, writable: false)]
+    private Collection $images;
+
+    public function __construct()
+    {
+        $this->images = new ArrayCollection();
+    }
 
     public function getId(): ?int
     {
@@ -286,6 +306,33 @@ class Work implements RoomScopedInterface
     public function setActualCost(?int $actualCost): static
     {
         $this->actualCost = $actualCost;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Image>
+     */
+    public function getImages(): Collection
+    {
+        return $this->images;
+    }
+
+    public function addImage(Image $image): static
+    {
+        if (!$this->images->contains($image)) {
+            $this->images->add($image);
+            $image->setWork($this);
+        }
+
+        return $this;
+    }
+
+    public function removeImage(Image $image): static
+    {
+        if ($this->images->removeElement($image) && $image->getWork() === $this) {
+            $image->setWork(null);
+        }
 
         return $this;
     }

@@ -44,6 +44,7 @@ Dans le tableau, `MEMBRE` et `GESTIONNAIRE` désignent les attributs `PROPERTY_C
 | **Note** (`/api/notes`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `MEMBRE` | `MEMBRE` **et** (`GESTIONNAIRE` **ou** auteur avant **et** après = user courant) | `GESTIONNAIRE` **ou** auteur = user courant |
 | **Occupation** (`/api/occupations`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `MEMBRE` | `MEMBRE` **et** (`GESTIONNAIRE` **ou** occupant avant **et** après = user courant) | `GESTIONNAIRE` **ou** occupant = user courant |
 | **Work** (`/api/works`) | `ROLE_USER` (cloisonné) | `MEMBRE` | `MEMBRE` | `MEMBRE` **et** (`GESTIONNAIRE` **ou** auteur avant **et** après = user courant) | `GESTIONNAIRE` **ou** auteur = user courant |
+| **Image** (`/api/images`) | — | — | `GESTIONNAIRE` **ou** (`MEMBRE` **et** auteur du parent) | — | `GESTIONNAIRE` **ou** (`MEMBRE` **et** auteur du parent) |
 
 > Les contrôles « avant et après » sur Note/Occupation/Work utilisent `securityPostDenormalize` : ils empêchent un utilisateur de réassigner un objet à un autre auteur/occupant, ou de le déplacer vers un logement dont il n'est pas membre (vérification simultanée de `object` et `previous_object`).
 
@@ -252,6 +253,7 @@ Liste de courses.
 | `createdAt` | datetime (ISO 8601) | **auto-rempli côté serveur à la création**, lecture seule (toute valeur envoyée par le client est ignorée) |
 | `author` | IRI User | **requis** |
 | `property` | IRI Property | **requis** — cf. [Cloisonnement par logement](#cloisonnement-par-logement) ; auto-rempli en `POST` si l'utilisateur n'a qu'un logement |
+| `images` | Image[] embarquées | lecture seule — cf. [Image](#image--apiimages) |
 
 > Implémenté via le processor `App\State\NoteProcessor` qui wrappe le `PersistProcessor` Doctrine et pose `createdAt = now()` sur l'opération `POST`. Le champ est marqué `#[ApiProperty(writable: false)]` pour éviter toute écriture client (y compris en PUT/PATCH).
 
@@ -288,6 +290,7 @@ Travaux à réaliser dans l'appartement (bricolage / prestation pro). Suivi de c
 | `actualCost` | int | optionnel — en euros |
 | `room` | IRI Room | optionnel — pièce concernée ; doit appartenir au même logement que les travaux |
 | `property` | IRI Property | **requis** — cf. [Cloisonnement par logement](#cloisonnement-par-logement) ; auto-rempli en `POST` si l'utilisateur n'a qu'un logement |
+| `images` | Image[] embarquées | lecture seule — cf. [Image](#image--apiimages) |
 
 Enum `WorkStatus` (`src/Enum/WorkStatus.php`) :
 
@@ -315,6 +318,33 @@ Enum `WorkPriority` (`src/Enum/WorkPriority.php`) :
 | `high` | Élevé |
 
 > Implémenté via le processor `App\State\WorkProcessor` qui wrappe le `PersistProcessor` Doctrine : (a) sur `POST`, pose `createdAt = now()` et assigne l'auteur courant si `author` est vide ; (b) sur toute opération, si `status === done` et `completedAt` est vide, pose `completedAt = now()`.
+
+### Image — `/api/images`
+
+Photo jointe à une note ou à des travaux. Seulement deux opérations : `POST /api/images` (`multipart/form-data`, champs `file` + `note` **ou** `work`) et `DELETE /api/images/{id}`. Les images se lisent embarquées dans `Note.images` / `Work.images` (`#[ApiProperty(readableLink: true)]`), qui portent déjà le cloisonnement : pas de `GET`, donc pas de `PropertyScopedInterface`.
+
+| Champ | Type | Contraintes |
+|-------|------|-------------|
+| `id` | int | — |
+| `mimeType` | string | lecture seule — type du fichier **stocké** |
+| `size` | int | lecture seule — octets, après compression |
+| `width` / `height` | int | lecture seule — pixels, sens d'affichage |
+| `createdAt` | datetime | lecture seule |
+| `url` | string | lecture seule — **chemin** signé, ajouté par `App\Serializer\ImageNormalizer` |
+
+Non exposés : `note`, `work`, `storedName`.
+
+Chaîne d'upload (`App\State\ImageUploadProcessor`, opération en `deserialize: false`) :
+
+1. Résolution de l'IRI du parent via l'`IriConverter`, donc via `PropertyScopeExtension` : un parent d'un autre logement est introuvable (`422`).
+2. Droits : même règle que le `PATCH` du parent, vérifiée à la main faute d'objet désérialisé pour `securityPostDenormalize`.
+3. Limite de 10 images par parent, puis `Assert\File` (15 Mo, JPEG / PNG / WebP).
+4. `App\Image\ImageOptimizer` (GD) : au-delà de 1 Mo, orientation EXIF appliquée, plus grand côté ramené à 2048 px, JPEG qualité 82. Refus au-delà de 50 Mpx.
+5. `App\Image\ImageStorage` copie le fichier sous un nom aléatoire dans `IMAGE_STORAGE_DIR`, puis persistance. Si le `flush` échoue, le fichier est effacé.
+
+**Lecture du fichier** : `GET /api/images/{id}/file` (`App\Controller\ImageFileController`), route en `PUBLIC_ACCESS`. L'autorisation est la signature `UriSigner` (HMAC sur `APP_SECRET`) calculée sur le chemin seul, avec une expiration arrondie au surlendemain minuit pour garder une URL stable sur la journée. Changer `APP_SECRET` invalide toutes les URLs en cours, sans autre effet : les clients relisent le parent.
+
+**Suppression des fichiers** : cascade ORM `remove` depuis `Note::$images` / `Work::$images`, et listener `App\Doctrine\ImageFileRemover` qui efface les fichiers en `postFlush`, une fois la transaction validée. Le `ON DELETE CASCADE` des clés étrangères n'est qu'un filet : une suppression faite en SQL direct laisse les fichiers orphelins.
 
 ## Filtres & tri
 

@@ -105,12 +105,15 @@ src/
 │   ├── PropertyScopedInterface.php # marque une entité comme rattachée à un logement
 │   └── RoomScopedInterface.php     # ... et rattachable à une pièce de ce logement
 ├── Controller/         # Quasi vide — tout est généré par API Platform
+│   └── ImageFileController.php     # sert le fichier d'une image via URL signée
 ├── DataFixtures/       # Fixtures dev/test (deux logements, appartenances disjointes)
 │   └── AppFixtures.php
 ├── Doctrine/
+│   ├── ImageFileRemover.php        # efface les fichiers des images supprimées (postFlush)
 │   └── PropertyScopeExtension.php  # cloisonnement des lectures, collections + items
 ├── Entity/             # Entités Doctrine = ressources API Platform
 │   ├── Category.php
+│   ├── Image.php
 │   ├── InventoryItem.php
 │   ├── Note.php
 │   ├── Occupation.php
@@ -124,10 +127,16 @@ src/
 │   ├── PropertyRole.php # rôle local dans un logement (manager / occupant)
 │   ├── RoomType.php     # nature d'une pièce (kitchen, bedroom, …), nullable
 │   └── State.php        # État d'un InventoryItem (ok / worn / replace)
+├── Image/
+│   ├── ImageOptimizer.php          # contrôle + compression GD (> 1 Mo)
+│   └── ImageStorage.php            # dossier IMAGE_STORAGE_DIR
 ├── Repository/         # Repos Doctrine
+├── Serializer/
+│   └── ImageNormalizer.php         # ajoute l'URL signée aux images
 ├── Security/Voter/
 │   └── PropertyVoter.php           # cloisonnement des écritures
 ├── State/
+│   ├── ImageUploadProcessor.php    # POST /api/images (multipart)
 │   ├── MeProvider.php              # Provider API Platform pour GET /api/me
 │   └── PropertyScopeProcessor.php  # repli mono-logement au POST
 ├── Validator/

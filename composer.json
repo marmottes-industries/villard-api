@@ -6,6 +6,9 @@
     "require": {
         "php": ">=8.4",
         "ext-ctype": "*",
+        "ext-exif": "*",
+        "ext-fileinfo": "*",
+        "ext-gd": "*",
         "ext-iconv": "*",
         "api-platform/doctrine-orm": "^4.3",
         "api-platform/symfony": "^4.3",
